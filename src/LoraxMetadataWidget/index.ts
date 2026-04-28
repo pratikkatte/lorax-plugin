@@ -51,7 +51,12 @@ const stateModel = types
     snapshot: types.maybeNull(types.frozen()),
     selectedDetail: types.maybeNull(types.frozen()),
     detailsState: types.maybeNull(types.frozen()),
+    filterState: types.maybeNull(types.frozen()),
+    activeTab: types.optional(types.number, 0),
   })
+  .volatile(() => ({
+    filterController: null as unknown,
+  }))
   .actions(self => ({
     setSnapshot(snapshot: unknown) {
       self.snapshot = sanitizeSnapshot(snapshot)
@@ -61,6 +66,15 @@ const stateModel = types
     },
     setDetailsState(detailsState: unknown) {
       self.detailsState = detailsState
+    },
+    setFilterState(filterState: unknown) {
+      self.filterState = filterState
+    },
+    setFilterController(filterController: unknown) {
+      self.filterController = filterController
+    },
+    setActiveTab(activeTab: number) {
+      self.activeTab = activeTab
     },
   }))
 

@@ -16,6 +16,9 @@ import {
   type SelectionDetail,
 } from '../detailsRequest'
 import { LORAX_METADATA_WIDGET_ID, LoraxDisplayModel } from '../model'
+import { metadataFeatureActions } from '../../LoraxMetadataWidget/metadataFeatureActions'
+import type { MetadataFeature } from '../../LoraxMetadataWidget/metadataFeatureConfig'
+import { metadataFeatureConfig } from '../../LoraxMetadataWidget/metadataFeatureConfig'
 import type { LinearGenomeViewModel } from '@jbrowse/plugin-linear-genome-view'
 
 function hasLoadFile(
@@ -130,10 +133,20 @@ type MetadataWidgetModel = {
   setSnapshot?: (snapshot: unknown) => void
   setSelectedDetail?: (detail: unknown) => void
   setDetailsState?: (detailsState: unknown) => void
+  setFilterState?: (filterState: unknown) => void
+  setFilterController?: (filterController: unknown) => void
+  setActiveTab?: (activeTab: number) => void
 }
 
 type DeckPickInfo = { x?: number; y?: number; object?: unknown }
 type DeckPickEvent = { srcEvent?: MouseEvent | PointerEvent | TouchEvent }
+type DeckRef = {
+  viewAdjustY?: () => boolean
+  setGenomicCoords?: (coords: [number, number]) => void
+}
+
+const FILTER_TAB_INDEX = 2
+const PRESET_FEATURE_PARAM = 'presetfeature'
 
 /** Screen coords for `position: fixed` — deck `info.x/y` are canvas-relative, not client. */
 function getClientCoordsForTooltip(
@@ -157,23 +170,97 @@ function getClientCoordsForTooltip(
   return null
 }
 
+function hexToRgb(hex: string) {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+  return result
+    ? [
+        Number.parseInt(result[1], 16),
+        Number.parseInt(result[2], 16),
+        Number.parseInt(result[3], 16),
+      ]
+    : [150, 150, 150]
+}
+
+function normalizeColor(color: unknown): number[] | null {
+  if (Array.isArray(color)) {
+    const r = Number(color[0])
+    const g = Number(color[1])
+    const b = Number(color[2])
+    const a = color.length > 3 ? Number(color[3]) : 255
+    if ([r, g, b, a].every(val => Number.isFinite(val))) {
+      return [r, g, b, a]
+    }
+    return null
+  }
+  if (typeof color === 'string' && /^#?([a-fA-F0-9]{6})$/.test(color)) {
+    const rgb = hexToRgb(color)
+    return [rgb[0], rgb[1], rgb[2], 255]
+  }
+  return null
+}
+
+function getPresetFeatureIdFromURL() {
+  if (typeof window === 'undefined') {
+    return null
+  }
+  return new URLSearchParams(window.location.search).get(PRESET_FEATURE_PARAM)
+}
+
+function updatePresetInURL(featureId: string | null) {
+  if (typeof window === 'undefined') {
+    return
+  }
+  const next = new URLSearchParams(window.location.search)
+  if (featureId) {
+    next.set(PRESET_FEATURE_PARAM, featureId)
+  } else {
+    next.delete(PRESET_FEATURE_PARAM)
+  }
+  const search = next.toString()
+  const url = `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`
+  window.history.replaceState(window.history.state, '', url)
+}
+
+function loadedMetadataToObject(value: unknown): Record<string, unknown> {
+  if (value instanceof Map) {
+    return Object.fromEntries(value.entries())
+  }
+  return {}
+}
+
 function LoraxDeckContainer({
+  deckRef,
   loadResult,
   height,
   viewConfig,
   intervalCoords,
   offsetPercent,
+  treeColors,
+  colorByTree,
+  hoveredTreeIndex,
+  highlightedMutationNode,
+  highlightedMutationTreeIndex,
   onTipHover,
   onEdgeHover,
+  onTreeLoadingChange,
+  onVisibleTreesChange,
   onSelectionUpdate,
 }: {
+  deckRef: React.RefObject<DeckRef>
   loadResult: LoadFileResult | null
   height: number
   viewConfig: Record<string, any>
   intervalCoords: [number, number] | null
   offsetPercent: OffsetPercent
+  treeColors: Record<string, string>
+  colorByTree: boolean
+  hoveredTreeIndex: number | null
+  highlightedMutationNode: string | null
+  highlightedMutationTreeIndex: string | number | null
   onTipHover: (tip: unknown, info: DeckPickInfo, event: DeckPickEvent) => void
   onEdgeHover: (edge: unknown, info: DeckPickInfo, event: DeckPickEvent) => void
+  onTreeLoadingChange: (loading: boolean) => void
+  onVisibleTreesChange: (trees: number[]) => void
   onSelectionUpdate: (
     detail: SelectionDetail,
     detailsState: DetailsState,
@@ -292,12 +379,21 @@ function LoraxDeckContainer({
       }}
     >
       <LoraxDeckGL
+        ref={deckRef}
         viewConfig={viewConfig}
         showPolygons
         treeLayersEnabled={true}
         externalGenomicCoords={intervalCoords}
         externalGenomicCoordsRequired
         externalGenomicCoordsSync
+        colorEdgesByTree={colorByTree}
+        treeEdgeColors={treeColors}
+        hoveredTreeIndex={hoveredTreeIndex}
+        highlightedMutationNode={highlightedMutationNode}
+        highlightedMutationTreeIndex={highlightedMutationTreeIndex}
+        onTreeLoadingChange={onTreeLoadingChange}
+        onVisibleTreesChange={onVisibleTreesChange}
+        polygonOptions={{ treeColors }}
         onTipHover={onTipHover}
         onTipClick={onTipClick}
         onEdgeHover={onEdgeHover}
@@ -336,6 +432,443 @@ function LoraxDeckContainer({
   )
 }
 
+function LoraxMetadataWidgetBridge({
+  session,
+  model,
+  loadResult,
+  view,
+  deckRef,
+  metadataWidgetRef,
+  visibleTrees,
+  treeColors,
+  colorByTree,
+  hoveredTreeIndex,
+  treeIsLoading,
+  setTreeColors,
+  setColorByTree,
+  setHoveredTreeIndex,
+  setHighlightedMutationNode,
+  setHighlightedMutationTreeIndex,
+  waitForTreeLoad,
+}: {
+  session: any
+  model: LoraxDisplayModel
+  loadResult: LoadFileResult | null
+  view: LinearGenomeViewModel
+  deckRef: React.RefObject<DeckRef>
+  metadataWidgetRef: React.MutableRefObject<MetadataWidgetModel | null>
+  visibleTrees: number[]
+  treeColors: Record<string, string>
+  colorByTree: boolean
+  hoveredTreeIndex: number | null
+  treeIsLoading: boolean
+  setTreeColors: React.Dispatch<React.SetStateAction<Record<string, string>>>
+  setColorByTree: React.Dispatch<React.SetStateAction<boolean>>
+  setHoveredTreeIndex: React.Dispatch<React.SetStateAction<number | null>>
+  setHighlightedMutationNode: React.Dispatch<
+    React.SetStateAction<string | null>
+  >
+  setHighlightedMutationTreeIndex: React.Dispatch<
+    React.SetStateAction<string | number | null>
+  >
+  waitForTreeLoad: () => Promise<void>
+}) {
+  const {
+    tsconfig,
+    searchTerm = '',
+    setSearchTerm,
+    searchTags = [],
+    setSearchTags,
+    selectedColorBy = null,
+    setSelectedColorBy,
+    coloryby = {},
+    metadataColors = {},
+    setMetadataColors,
+    loadedMetadata,
+    enabledValues = new Set(),
+    setEnabledValues,
+    highlightedMetadataValue = null,
+    setHighlightedMetadataValue,
+    displayLineagePaths = false,
+    setDisplayLineagePaths,
+  } = useLorax()
+
+  const [activeFeatureId, setActiveFeatureId] = useState<string | null>(null)
+  const [pendingFeature, setPendingFeature] = useState<MetadataFeature | null>(
+    null,
+  )
+  const [pendingPreset, setPendingPreset] = useState<MetadataFeature | null>(
+    null,
+  )
+  const lastPresetFeatureIdRef = useRef<string | null>(null)
+
+  const matchedFeatures = useMemo(() => {
+    const project = tsconfig?.project
+    const filename = tsconfig?.filename
+    if (!project || !filename) {
+      return []
+    }
+    return metadataFeatureConfig.filter(
+      feature => feature.project === project && feature.filename === filename,
+    )
+  }, [tsconfig?.project, tsconfig?.filename])
+
+  const isMetadataReady = useCallback(
+    (key?: string) => {
+      if (!key) return false
+      return loadedMetadata?.get?.(key) === 'pyarrow'
+    },
+    [loadedMetadata],
+  )
+
+  const applyFeatureColors = useCallback(
+    (feature: MetadataFeature) => {
+      const key = feature.metadata?.key
+      const colorOverrides = feature.metadata?.colors
+      if (!key || !colorOverrides || !setMetadataColors) {
+        return
+      }
+      const normalized: Record<string, number[]> = {}
+      Object.entries(colorOverrides).forEach(([value, color]) => {
+        const nextColor = normalizeColor(color)
+        if (nextColor) {
+          normalized[String(value)] = nextColor
+        }
+      })
+      if (Object.keys(normalized).length === 0) {
+        return
+      }
+      setMetadataColors((prev: Record<string, Record<string, number[]>>) => ({
+        ...(prev || {}),
+        [key]: {
+          ...(prev?.[key] || {}),
+          ...normalized,
+        },
+      }))
+    },
+    [setMetadataColors],
+  )
+
+  useEffect(() => {
+    if (!pendingFeature) return
+    const key = pendingFeature.metadata?.key
+    if (!key) {
+      setPendingFeature(null)
+      return
+    }
+    if (!isMetadataReady(key)) return
+    applyFeatureColors(pendingFeature)
+    setPendingFeature(null)
+  }, [applyFeatureColors, isMetadataReady, pendingFeature])
+
+  const navigateToCoords = useCallback(
+    async (coords?: [number, number]) => {
+      if (!Array.isArray(coords) || coords.length !== 2) return
+      const start = Number(coords[0])
+      const end = Number(coords[1])
+      if (!Number.isFinite(start) || !Number.isFinite(end)) return
+
+      const nextCoords: [number, number] = [start, end]
+      const refName = view?.dynamicBlocks?.contentBlocks?.[0]?.refName
+      if (refName && typeof view?.navTo === 'function') {
+        view.navTo({ refName, start, end })
+      }
+      deckRef.current?.setGenomicCoords?.(nextCoords)
+      await waitForTreeLoad()
+    },
+    [deckRef, view, waitForTreeLoad],
+  )
+
+  const applyPresetValues = useCallback(
+    async (feature: MetadataFeature) => {
+      const key = feature.metadata?.key
+      const values = Array.isArray(feature.metadata?.values)
+        ? feature.metadata.values.map(String)
+        : []
+
+      await navigateToCoords(feature.genomicCoords)
+
+      const firstMutation = Array.isArray(feature.mutation)
+        ? feature.mutation[0]
+        : null
+      if (firstMutation) {
+        const nodeId =
+          firstMutation.nodeId ?? firstMutation.nodeid ?? firstMutation.node_id
+        if (nodeId !== null && nodeId !== undefined && nodeId !== '') {
+          setHighlightedMutationNode(String(nodeId))
+          const treeIndex =
+            firstMutation.treeIndex ??
+            firstMutation.treeindx ??
+            firstMutation.tree_idx ??
+            null
+          setHighlightedMutationTreeIndex(
+            treeIndex === '' ? null : (treeIndex as string | number | null),
+          )
+        }
+      }
+
+      setSearchTags?.(values)
+      setEnabledValues?.(new Set(values))
+      if (feature.displayLineage) {
+        setDisplayLineagePaths?.(true)
+      }
+      if (feature.metadata?.colors) {
+        if (isMetadataReady(key)) {
+          applyFeatureColors(feature)
+        } else {
+          setPendingFeature(feature)
+        }
+      }
+      if (Array.isArray(feature.actions)) {
+        feature.actions.forEach(action => {
+          const handler =
+            metadataFeatureActions[
+              action as keyof typeof metadataFeatureActions
+            ]
+          if (typeof handler === 'function') {
+            handler({ deckRef })
+          }
+        })
+      }
+    },
+    [
+      applyFeatureColors,
+      deckRef,
+      isMetadataReady,
+      navigateToCoords,
+      setDisplayLineagePaths,
+      setEnabledValues,
+      setHighlightedMutationNode,
+      setHighlightedMutationTreeIndex,
+      setSearchTags,
+    ],
+  )
+
+  const applyFeature = useCallback(
+    (feature: MetadataFeature, options: { syncUrl?: boolean } = {}) => {
+      if (!feature.id) return
+      setActiveFeatureId(feature.id)
+      if (options.syncUrl !== false) {
+        updatePresetInURL(feature.id)
+      }
+
+      const key = feature.metadata?.key
+      if (key && setSelectedColorBy && selectedColorBy !== key) {
+        setSelectedColorBy(key)
+        setPendingPreset(feature)
+        return
+      }
+      void applyPresetValues(feature)
+    },
+    [applyPresetValues, selectedColorBy, setSelectedColorBy],
+  )
+
+  useEffect(() => {
+    if (!pendingPreset) return
+    const key = pendingPreset.metadata?.key
+    if (key && selectedColorBy !== key) return
+    void applyPresetValues(pendingPreset)
+    setPendingPreset(null)
+  }, [applyPresetValues, pendingPreset, selectedColorBy])
+
+  const disableFeature = useCallback(() => {
+    setActiveFeatureId(null)
+    setPendingFeature(null)
+    setPendingPreset(null)
+    updatePresetInURL(null)
+    setSearchTags?.([])
+    if (selectedColorBy && metadataColors?.[selectedColorBy]) {
+      setEnabledValues?.(new Set(Object.keys(metadataColors[selectedColorBy])))
+    }
+  }, [metadataColors, selectedColorBy, setEnabledValues, setSearchTags])
+
+  const filterState = useMemo(
+    () => ({
+      tsconfig: {
+        project: tsconfig?.project ?? null,
+        filename: tsconfig?.filename ?? null,
+        tree_info: Boolean(tsconfig?.tree_info),
+      },
+      searchTerm,
+      searchTags,
+      selectedColorBy,
+      coloryby,
+      metadataColors: metadataColors || {},
+      loadedMetadata: loadedMetadataToObject(loadedMetadata),
+      enabledValues: Array.from(enabledValues || []).map(String),
+      highlightedMetadataValue,
+      displayLineagePaths,
+      visibleTrees,
+      treeColors,
+      colorByTree,
+      hoveredTreeIndex,
+      treeIsLoading,
+      activeFeatureId,
+    }),
+    [
+      activeFeatureId,
+      colorByTree,
+      coloryby,
+      displayLineagePaths,
+      enabledValues,
+      highlightedMetadataValue,
+      hoveredTreeIndex,
+      loadedMetadata,
+      metadataColors,
+      searchTags,
+      searchTerm,
+      selectedColorBy,
+      treeColors,
+      treeIsLoading,
+      tsconfig?.filename,
+      tsconfig?.project,
+      tsconfig?.tree_info,
+      visibleTrees,
+    ],
+  )
+
+  const controller = useMemo(
+    () => ({
+      setSearchTerm: (value: string) => setSearchTerm?.(value),
+      setSearchTags: (values: string[]) => setSearchTags?.(values),
+      addSearchTag: (value: string) => {
+        if (!value) return
+        setSearchTags?.((prev: string[]) =>
+          prev.includes(value) ? prev : [...prev, value],
+        )
+      },
+      removeSearchTag: (index: number) => {
+        setSearchTags?.((prev: string[]) => prev.filter((_, i) => i !== index))
+      },
+      setSelectedColorBy: (key: string) => setSelectedColorBy?.(key),
+      setEnabledValues: (values: string[]) =>
+        setEnabledValues?.(new Set(values)),
+      toggleEnabledValue: (value: string) => {
+        setEnabledValues?.((prev: Set<string>) => {
+          const next = new Set(prev)
+          if (next.has(value)) {
+            next.delete(value)
+            setSearchTags?.((tags: string[]) =>
+              tags.filter(tag => tag !== value),
+            )
+          } else {
+            next.add(value)
+          }
+          return next
+        })
+      },
+      setMetadataColor: (key: string, value: string, color: number[]) => {
+        setMetadataColors?.(
+          (prev: Record<string, Record<string, number[]>>) => ({
+            ...(prev || {}),
+            [key]: {
+              ...(prev?.[key] || {}),
+              [value]: color,
+            },
+          }),
+        )
+      },
+      toggleHighlightedValue: (value: string) => {
+        setHighlightedMetadataValue?.((prev: string | null) =>
+          prev === value ? null : value,
+        )
+      },
+      setDisplayLineagePaths: (value: boolean) =>
+        setDisplayLineagePaths?.(value),
+      setTreeColor: (treeIndex: number, color: string) => {
+        setTreeColors(prev => ({ ...prev, [String(treeIndex)]: color }))
+      },
+      clearTreeColor: (treeIndex: number) => {
+        setTreeColors(prev => {
+          const next = { ...prev }
+          delete next[String(treeIndex)]
+          return next
+        })
+      },
+      setHoveredTreeIndex,
+      setColorByTree,
+      applyPresetFeature: (feature: MetadataFeature) => applyFeature(feature),
+      disablePresetFeature: () => disableFeature(),
+    }),
+    [
+      applyFeature,
+      disableFeature,
+      setColorByTree,
+      setDisplayLineagePaths,
+      setEnabledValues,
+      setHighlightedMetadataValue,
+      setMetadataColors,
+      setHoveredTreeIndex,
+      setSearchTags,
+      setSearchTerm,
+      setSelectedColorBy,
+      setTreeColors,
+    ],
+  )
+
+  const ensureFilterWidget = useCallback(() => {
+    if (!isSessionModelWithWidgets(session)) {
+      return
+    }
+    const snapshot = serializeLoadSnapshotForDrawer(loadResult)
+    let trackLabel = 'Lorax'
+    try {
+      const track = getContainingTrack(model)
+      trackLabel =
+        (readConfObject(track.configuration, 'name') as string) || trackLabel
+    } catch {
+      // display may not be mounted under a track yet
+    }
+    const existingWidget = session.widgets.get(LORAX_METADATA_WIDGET_ID) as
+      | MetadataWidgetModel
+      | undefined
+    const widget =
+      existingWidget ??
+      (session.addWidget('LoraxMetadataWidget', LORAX_METADATA_WIDGET_ID, {
+        trackLabel,
+        snapshot,
+        filterState,
+        activeTab: FILTER_TAB_INDEX,
+      }) as MetadataWidgetModel)
+    widget.setSnapshot?.(snapshot)
+    widget.setFilterState?.(filterState)
+    widget.setFilterController?.(controller)
+    widget.setActiveTab?.(FILTER_TAB_INDEX)
+    metadataWidgetRef.current = widget
+    session.showWidget(widget)
+    model.setMetadataView(true)
+  }, [controller, filterState, loadResult, metadataWidgetRef, model, session])
+
+  useEffect(() => {
+    const widget = session?.widgets?.get?.(LORAX_METADATA_WIDGET_ID) as
+      | MetadataWidgetModel
+      | undefined
+    const existing = widget ?? metadataWidgetRef.current
+    if (!existing) {
+      return
+    }
+    existing.setFilterState?.(filterState)
+    existing.setFilterController?.(controller)
+    metadataWidgetRef.current = existing
+  }, [controller, filterState, metadataWidgetRef, session])
+
+  useEffect(() => {
+    const currentId = getPresetFeatureIdFromURL()
+    if (!currentId) {
+      lastPresetFeatureIdRef.current = null
+      return
+    }
+    if (lastPresetFeatureIdRef.current === currentId) return
+    const feature = matchedFeatures.find(item => item.id === currentId)
+    if (!feature) return
+    lastPresetFeatureIdRef.current = currentId
+    ensureFilterWidget()
+    applyFeature(feature, { syncUrl: false })
+  }, [applyFeature, ensureFilterWidget, matchedFeatures])
+
+  return null
+}
+
 const LoraxComponent = observer(function LoraxComponent({
   model,
 }: {
@@ -353,9 +886,73 @@ const LoraxComponent = observer(function LoraxComponent({
   const [hoverTooltip, setHoverTooltip] = useState<HoverTooltipState | null>(
     null,
   )
+  const deckRef = useRef<DeckRef>(null)
+  const [visibleTrees, setVisibleTrees] = useState<number[]>([])
+  const [treeColors, setTreeColors] = useState<Record<string, string>>({})
+  const [colorByTree, setColorByTree] = useState(false)
+  const [hoveredTreeIndex, setHoveredTreeIndex] = useState<number | null>(null)
+  const [treeIsLoading, setTreeIsLoading] = useState(false)
+  const treeIsLoadingRef = useRef(false)
+  const presetLoadResolversRef = useRef<Array<() => void>>([])
+  const presetLoadTimeoutRef = useRef<number | null>(null)
+  const [highlightedMutationNode, setHighlightedMutationNode] = useState<
+    string | null
+  >(null)
+  const [highlightedMutationTreeIndex, setHighlightedMutationTreeIndex] =
+    useState<string | number | null>(null)
 
   const clearHoverTooltip = useCallback(() => setHoverTooltip(null), [])
   const metadataWidgetRef = useRef<MetadataWidgetModel | null>(null)
+
+  const handleTreeLoadingChange = useCallback((loading: boolean) => {
+    setTreeIsLoading(loading)
+    treeIsLoadingRef.current = loading
+    if (!loading) {
+      if (presetLoadTimeoutRef.current !== null) {
+        window.clearTimeout(presetLoadTimeoutRef.current)
+        presetLoadTimeoutRef.current = null
+      }
+      presetLoadResolversRef.current.splice(0).forEach(resolve => resolve())
+    }
+  }, [])
+
+  const waitForTreeLoad = useCallback(() => {
+    return new Promise<void>(resolve => {
+      if (presetLoadTimeoutRef.current !== null) {
+        window.clearTimeout(presetLoadTimeoutRef.current)
+      }
+      presetLoadTimeoutRef.current = window.setTimeout(() => {
+        presetLoadTimeoutRef.current = null
+        presetLoadResolversRef.current.splice(0).forEach(done => done())
+        resolve()
+      }, 1500)
+      if (!treeIsLoadingRef.current) {
+        window.setTimeout(() => {
+          if (!treeIsLoadingRef.current) {
+            if (presetLoadTimeoutRef.current !== null) {
+              window.clearTimeout(presetLoadTimeoutRef.current)
+              presetLoadTimeoutRef.current = null
+            }
+            resolve()
+            return
+          }
+          presetLoadResolversRef.current.push(resolve)
+        }, 0)
+        return
+      }
+      presetLoadResolversRef.current.push(resolve)
+    })
+  }, [])
+
+  useEffect(
+    () => () => {
+      if (presetLoadTimeoutRef.current !== null) {
+        window.clearTimeout(presetLoadTimeoutRef.current)
+      }
+      presetLoadResolversRef.current.splice(0).forEach(resolve => resolve())
+    },
+    [],
+  )
 
   const setTooltipFromEvent = useCallback(
     (
@@ -696,18 +1293,46 @@ const LoraxComponent = observer(function LoraxComponent({
         apiBase={apiBase}
         isProd={isProd}
         enableConfig
+        enableMetadataFilter
         rpcManager={session?.rpcManager}
         rpcSessionId={session?.id || 'default'}
         urlSyncEnabled={false}
         disableInlineWorkers
         sessionOverride={loadResult?.loraxSid}
       >
+        <LoraxMetadataWidgetBridge
+          session={session}
+          model={model}
+          loadResult={loadResult}
+          view={view}
+          deckRef={deckRef}
+          metadataWidgetRef={metadataWidgetRef}
+          visibleTrees={visibleTrees}
+          treeColors={treeColors}
+          colorByTree={colorByTree}
+          hoveredTreeIndex={hoveredTreeIndex}
+          treeIsLoading={treeIsLoading}
+          setTreeColors={setTreeColors}
+          setColorByTree={setColorByTree}
+          setHoveredTreeIndex={setHoveredTreeIndex}
+          setHighlightedMutationNode={setHighlightedMutationNode}
+          setHighlightedMutationTreeIndex={setHighlightedMutationTreeIndex}
+          waitForTreeLoad={waitForTreeLoad}
+        />
         <LoraxDeckContainer
+          deckRef={deckRef}
           loadResult={loadResult}
           height={trackHeight}
           viewConfig={viewConfig}
           intervalCoords={intervalCoords}
           offsetPercent={offsetPercent}
+          treeColors={treeColors}
+          colorByTree={colorByTree}
+          hoveredTreeIndex={hoveredTreeIndex}
+          highlightedMutationNode={highlightedMutationNode}
+          highlightedMutationTreeIndex={highlightedMutationTreeIndex}
+          onTreeLoadingChange={handleTreeLoadingChange}
+          onVisibleTreesChange={trees => setVisibleTrees(trees || [])}
           onTipHover={onTipHover}
           onEdgeHover={onEdgeHover}
           onSelectionUpdate={showMetadataWidgetForSelection}

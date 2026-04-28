@@ -1,4 +1,4 @@
-import React, { useState, type ReactNode } from 'react'
+import React, { useEffect, useMemo, useState, type ReactNode } from 'react'
 
 import SimpleField from '@jbrowse/core/BaseFeatureWidget/BaseFeatureDetail/SimpleField'
 import { makeStyles } from 'tss-react/mui'
@@ -16,6 +16,10 @@ import {
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { observer } from 'mobx-react'
 
+import {
+  metadataFeatureConfig,
+  type MetadataFeature,
+} from '../metadataFeatureConfig'
 import type { IStateTreeNode } from 'mobx-state-tree'
 
 /** Widget state; extends MST node with fields this component reads. */
@@ -24,6 +28,10 @@ type LoraxMetadataWidgetModel = IStateTreeNode & {
   snapshot?: unknown
   selectedDetail?: unknown
   detailsState?: unknown
+  filterState?: unknown
+  filterController?: FilterController | null
+  activeTab?: number
+  setActiveTab?: (activeTab: number) => void
 }
 
 interface ParsedSnapshot {
@@ -44,6 +52,49 @@ interface ParsedDetailsState {
   error?: string | null
   treeIndex?: number
 }
+
+interface ParsedFilterState {
+  tsconfig?: {
+    project?: string | null
+    filename?: string | null
+    tree_info?: boolean
+  }
+  searchTerm: string
+  searchTags: string[]
+  selectedColorBy: string | null
+  coloryby: Record<string, string>
+  metadataColors: Record<string, Record<string, number[]>>
+  loadedMetadata: Record<string, unknown>
+  enabledValues: string[]
+  highlightedMetadataValue: string | null
+  displayLineagePaths: boolean
+  visibleTrees: number[]
+  treeColors: Record<string, string>
+  colorByTree: boolean
+  hoveredTreeIndex: number | null
+  activeFeatureId: string | null
+}
+
+interface FilterController {
+  setSearchTerm?: (value: string) => void
+  setSearchTags?: (values: string[]) => void
+  addSearchTag?: (value: string) => void
+  removeSearchTag?: (index: number) => void
+  setSelectedColorBy?: (key: string) => void
+  setEnabledValues?: (values: string[]) => void
+  toggleEnabledValue?: (value: string) => void
+  setMetadataColor?: (key: string, value: string, color: number[]) => void
+  toggleHighlightedValue?: (value: string) => void
+  setDisplayLineagePaths?: (value: boolean) => void
+  setTreeColor?: (treeIndex: number, color: string) => void
+  clearTreeColor?: (treeIndex: number) => void
+  setHoveredTreeIndex?: (treeIndex: number | null) => void
+  setColorByTree?: (value: boolean) => void
+  applyPresetFeature?: (feature: MetadataFeature) => void
+  disablePresetFeature?: (feature: MetadataFeature) => void
+}
+
+const ITEMS_PER_PAGE = 100
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
@@ -85,6 +136,84 @@ function parseDetailsState(raw: unknown): ParsedDetailsState | null {
     error: typeof raw.error === 'string' ? raw.error : null,
     treeIndex: typeof raw.treeIndex === 'number' ? raw.treeIndex : undefined,
   }
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(String) : []
+}
+
+function parseFilterState(raw: unknown): ParsedFilterState {
+  const obj = isRecord(raw) ? raw : {}
+  const tsconfig = isRecord(obj.tsconfig) ? obj.tsconfig : {}
+  return {
+    tsconfig: {
+      project: typeof tsconfig.project === 'string' ? tsconfig.project : null,
+      filename:
+        typeof tsconfig.filename === 'string' ? tsconfig.filename : null,
+      tree_info: tsconfig.tree_info === true,
+    },
+    searchTerm: typeof obj.searchTerm === 'string' ? obj.searchTerm : '',
+    searchTags: asStringArray(obj.searchTags),
+    selectedColorBy:
+      typeof obj.selectedColorBy === 'string' ? obj.selectedColorBy : null,
+    coloryby: isRecord(obj.coloryby)
+      ? Object.fromEntries(
+          Object.entries(obj.coloryby).map(([key, value]) => [
+            key,
+            String(value),
+          ]),
+        )
+      : {},
+    metadataColors: isRecord(obj.metadataColors)
+      ? (obj.metadataColors as Record<string, Record<string, number[]>>)
+      : {},
+    loadedMetadata: isRecord(obj.loadedMetadata) ? obj.loadedMetadata : {},
+    enabledValues: asStringArray(obj.enabledValues),
+    highlightedMetadataValue:
+      typeof obj.highlightedMetadataValue === 'string'
+        ? obj.highlightedMetadataValue
+        : null,
+    displayLineagePaths: obj.displayLineagePaths === true,
+    visibleTrees: Array.isArray(obj.visibleTrees)
+      ? obj.visibleTrees.map(Number).filter(Number.isFinite)
+      : [],
+    treeColors: isRecord(obj.treeColors)
+      ? Object.fromEntries(
+          Object.entries(obj.treeColors).map(([key, value]) => [
+            key,
+            String(value),
+          ]),
+        )
+      : {},
+    colorByTree: obj.colorByTree === true,
+    hoveredTreeIndex:
+      typeof obj.hoveredTreeIndex === 'number' ? obj.hoveredTreeIndex : null,
+    activeFeatureId:
+      typeof obj.activeFeatureId === 'string' ? obj.activeFeatureId : null,
+  }
+}
+
+function rgbaToHex(rgba: unknown) {
+  if (!Array.isArray(rgba)) return '#969696'
+  const [r, g, b] = rgba.map(Number)
+  return `#${[r, g, b]
+    .map(x =>
+      Number.isFinite(x)
+        ? Math.max(0, Math.min(255, x)).toString(16).padStart(2, '0')
+        : '96',
+    )
+    .join('')}`
+}
+
+function hexToRgb(hex: string) {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+  return result
+    ? [
+        Number.parseInt(result[1], 16),
+        Number.parseInt(result[2], 16),
+        Number.parseInt(result[3], 16),
+      ]
+    : [150, 150, 150]
 }
 
 function formatScalar(value: unknown): string | undefined {
@@ -227,6 +356,56 @@ const useStyles = makeStyles()(theme => ({
   },
   accordionDetails: {
     padding: theme.spacing(1),
+  },
+  filterBox: {
+    border: `1px solid ${theme.palette.divider}`,
+    borderRadius: theme.shape.borderRadius,
+    padding: theme.spacing(1),
+    marginBottom: theme.spacing(1.5),
+  },
+  filterRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1),
+    marginBottom: theme.spacing(1),
+  },
+  filterInput: {
+    minHeight: 32,
+    border: `1px solid ${theme.palette.divider}`,
+    borderRadius: theme.shape.borderRadius,
+    padding: theme.spacing(0.5, 1),
+    font: 'inherit',
+  },
+  valueList: {
+    maxHeight: 260,
+    overflow: 'auto',
+    border: `1px solid ${theme.palette.divider}`,
+    borderRadius: theme.shape.borderRadius,
+  },
+  valueRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1),
+    padding: theme.spacing(0.5, 1),
+    borderBottom: `1px solid ${theme.palette.divider}`,
+  },
+  tag: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: theme.spacing(0.5),
+    margin: theme.spacing(0, 0.5, 0.5, 0),
+    padding: theme.spacing(0.25, 0.75),
+    borderRadius: theme.shape.borderRadius,
+    backgroundColor: theme.palette.action.hover,
+    fontSize: theme.typography.caption.fontSize,
+  },
+  linkButton: {
+    border: 0,
+    background: 'transparent',
+    color: theme.palette.primary.main,
+    cursor: 'pointer',
+    font: 'inherit',
+    padding: theme.spacing(0.25, 0.5),
   },
 }))
 
@@ -514,6 +693,362 @@ function DetailsContent({
   )
 }
 
+function FilterContent({
+  filterState,
+  controller,
+}: {
+  filterState: ParsedFilterState
+  controller?: FilterController | null
+}) {
+  const { classes } = useStyles()
+  const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE)
+  const [isTreesExpanded, setIsTreesExpanded] = useState(true)
+
+  const selectedColorBy = filterState.selectedColorBy
+  const valueToColor = useMemo(
+    () =>
+      selectedColorBy && filterState.metadataColors?.[selectedColorBy]
+        ? filterState.metadataColors[selectedColorBy]
+        : {},
+    [filterState.metadataColors, selectedColorBy],
+  )
+  const enabledSet = useMemo(
+    () => new Set(filterState.enabledValues),
+    [filterState.enabledValues],
+  )
+  const allValues = useMemo(() => {
+    const values = Object.entries(valueToColor)
+    const term = filterState.searchTerm.trim().toLowerCase()
+    return term
+      ? values.filter(([value]) => value.toLowerCase().includes(term))
+      : values
+  }, [filterState.searchTerm, valueToColor])
+  const displayValues = allValues.slice(0, visibleCount)
+  const hasMore = visibleCount < allValues.length
+  const matchedFeatures = useMemo(() => {
+    const project = filterState.tsconfig?.project
+    const filename = filterState.tsconfig?.filename
+    if (!project || !filename) {
+      return []
+    }
+    return metadataFeatureConfig.filter(
+      feature => feature.project === project && feature.filename === filename,
+    )
+  }, [filterState.tsconfig?.filename, filterState.tsconfig?.project])
+  const isCsvFile = Boolean(filterState.tsconfig?.tree_info)
+
+  return (
+    <Box>
+      <Box className={classes.filterBox}>
+        <Box className={classes.filterRow}>
+          <Typography variant="button">Search</Typography>
+          <label style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+            <span>Display lineages</span>
+            <input
+              type="checkbox"
+              checked={filterState.displayLineagePaths}
+              onChange={event =>
+                controller?.setDisplayLineagePaths?.(event.target.checked)
+              }
+            />
+          </label>
+        </Box>
+        <Box className={classes.filterRow}>
+          <input
+            type="checkbox"
+            aria-label="Enable all metadata values"
+            checked={filterState.enabledValues.length > 0}
+            onChange={event => {
+              controller?.setEnabledValues?.(
+                event.target.checked ? Object.keys(valueToColor) : [],
+              )
+            }}
+          />
+          <select
+            className={classes.filterInput}
+            aria-label="Metadata key"
+            value={selectedColorBy ?? ''}
+            onChange={event => {
+              controller?.setSelectedColorBy?.(event.target.value)
+              controller?.setSearchTerm?.('')
+              controller?.setSearchTags?.([])
+              setVisibleCount(ITEMS_PER_PAGE)
+            }}
+          >
+            {Object.keys(filterState.coloryby).length === 0 ? (
+              <option value="">No metadata available</option>
+            ) : (
+              Object.entries(filterState.coloryby).map(([key, label]) => (
+                <option key={key} value={key}>
+                  {label}
+                </option>
+              ))
+            )}
+          </select>
+          <input
+            className={classes.filterInput}
+            aria-label="Search metadata values"
+            placeholder="Search..."
+            style={{ flex: 1, minWidth: 0 }}
+            value={filterState.searchTerm}
+            onChange={event => controller?.setSearchTerm?.(event.target.value)}
+            onKeyDown={event => {
+              if (event.key !== 'Enter') return
+              event.preventDefault()
+              const term = filterState.searchTerm.trim()
+              if (term) {
+                controller?.addSearchTag?.(term)
+                controller?.setSearchTerm?.('')
+              }
+            }}
+          />
+        </Box>
+
+        {filterState.searchTags.length > 0 ? (
+          <Box sx={{ mb: 1 }}>
+            {filterState.searchTags.map((tag, index) => {
+              const tagColor = selectedColorBy ? valueToColor[tag] : null
+              return (
+                <span
+                  key={`${tag}-${index}`}
+                  className={classes.tag}
+                  style={
+                    tagColor
+                      ? {
+                          backgroundColor: `rgba(${tagColor[0]}, ${tagColor[1]}, ${tagColor[2]}, 0.25)`,
+                        }
+                      : undefined
+                  }
+                >
+                  <span>{tag}</span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${tag}`}
+                    className={classes.linkButton}
+                    onClick={() => controller?.removeSearchTag?.(index)}
+                  >
+                    x
+                  </button>
+                </span>
+              )
+            })}
+          </Box>
+        ) : null}
+
+        {matchedFeatures.length > 0 ? (
+          <Box className={classes.filterBox}>
+            <Typography variant="caption" color="text.secondary">
+              Feature presets
+            </Typography>
+            {matchedFeatures.map(feature => {
+              const isActive = filterState.activeFeatureId === feature.id
+              return (
+                <Box key={feature.id} sx={{ mt: 1 }}>
+                  <Box className={classes.filterRow} sx={{ mb: 0.25 }}>
+                    <Typography variant="body2" sx={{ flex: 1 }}>
+                      {feature.label ?? feature.id}
+                    </Typography>
+                    <button
+                      type="button"
+                      title={isActive ? 'Disable preset' : 'Enable preset'}
+                      className={classes.linkButton}
+                      onClick={() => {
+                        if (isActive) {
+                          controller?.disablePresetFeature?.(feature)
+                        } else {
+                          controller?.applyPresetFeature?.(feature)
+                        }
+                      }}
+                    >
+                      {isActive ? 'Disable' : 'Enable'}
+                    </button>
+                  </Box>
+                  {feature.description ? (
+                    <Typography variant="caption" color="text.secondary">
+                      {feature.description}
+                    </Typography>
+                  ) : null}
+                </Box>
+              )
+            })}
+          </Box>
+        ) : null}
+
+        <Box className={classes.valueList}>
+          {displayValues.length > 0 ? (
+            <>
+              {displayValues.map(([value, color]) => {
+                const isEnabled = enabledSet.has(value)
+                const isHighlighted =
+                  filterState.highlightedMetadataValue === value
+                return (
+                  <Box
+                    key={value}
+                    className={classes.valueRow}
+                    sx={{
+                      opacity: isEnabled ? 1 : 0.45,
+                      backgroundColor: isHighlighted
+                        ? 'rgba(250, 204, 21, 0.2)'
+                        : undefined,
+                    }}
+                  >
+                    <input
+                      type="color"
+                      aria-label={`Color for ${value}`}
+                      value={rgbaToHex(color)}
+                      onChange={event => {
+                        if (!selectedColorBy) return
+                        const rgb = hexToRgb(event.target.value)
+                        controller?.setMetadataColor?.(selectedColorBy, value, [
+                          ...rgb,
+                          255,
+                        ])
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className={classes.linkButton}
+                      style={{ flex: 1, textAlign: 'left', color: 'inherit' }}
+                      onClick={() =>
+                        controller?.toggleHighlightedValue?.(value)
+                      }
+                      onDoubleClick={() => controller?.addSearchTag?.(value)}
+                    >
+                      {value}
+                    </button>
+                    <button
+                      type="button"
+                      className={classes.linkButton}
+                      onClick={() => controller?.addSearchTag?.(value)}
+                      disabled={!isEnabled}
+                    >
+                      Search
+                    </button>
+                    <button
+                      type="button"
+                      className={classes.linkButton}
+                      onClick={() => controller?.toggleEnabledValue?.(value)}
+                    >
+                      {isEnabled ? 'Remove' : 'Add'}
+                    </button>
+                  </Box>
+                )
+              })}
+              {hasMore ? (
+                <Box className={classes.valueRow}>
+                  <Typography variant="caption" sx={{ flex: 1 }}>
+                    Showing {displayValues.length} of {allValues.length}
+                  </Typography>
+                  <button
+                    type="button"
+                    className={classes.linkButton}
+                    onClick={() =>
+                      setVisibleCount(prev => prev + ITEMS_PER_PAGE)
+                    }
+                  >
+                    Load more
+                  </button>
+                </Box>
+              ) : null}
+            </>
+          ) : selectedColorBy ? (
+            <Typography sx={{ p: 1 }} color="text.secondary">
+              No values found
+            </Typography>
+          ) : (
+            <Typography sx={{ p: 1 }} color="text.secondary">
+              No metadata available
+            </Typography>
+          )}
+        </Box>
+      </Box>
+
+      <Box className={classes.filterBox}>
+        <Box className={classes.filterRow}>
+          <button
+            type="button"
+            className={classes.linkButton}
+            onClick={() => setIsTreesExpanded(prev => !prev)}
+          >
+            {isTreesExpanded ? 'Hide' : 'Show'}
+          </button>
+          <Typography variant="button" sx={{ flex: 1 }}>
+            Trees{' '}
+            {filterState.visibleTrees.length > 0
+              ? `(${filterState.visibleTrees.length})`
+              : ''}
+          </Typography>
+          {isCsvFile ? (
+            <label style={{ display: 'flex', gap: 6 }}>
+              <span>Color by tree</span>
+              <input
+                type="checkbox"
+                checked={filterState.colorByTree}
+                onChange={event =>
+                  controller?.setColorByTree?.(event.target.checked)
+                }
+              />
+            </label>
+          ) : null}
+        </Box>
+        {isTreesExpanded ? (
+          <Box className={classes.valueList}>
+            {filterState.visibleTrees.length > 0 ? (
+              filterState.visibleTrees.map(treeIndex => {
+                const isHovered = filterState.hoveredTreeIndex === treeIndex
+                const key = String(treeIndex)
+                return (
+                  <Box
+                    key={key}
+                    className={classes.valueRow}
+                    sx={{
+                      backgroundColor: isHovered
+                        ? 'rgba(59, 130, 246, 0.15)'
+                        : undefined,
+                    }}
+                    onMouseEnter={() =>
+                      controller?.setHoveredTreeIndex?.(treeIndex)
+                    }
+                    onMouseLeave={() => controller?.setHoveredTreeIndex?.(null)}
+                  >
+                    <Typography variant="body2" sx={{ flex: 1 }}>
+                      Tree {treeIndex}
+                    </Typography>
+                    <input
+                      type="color"
+                      aria-label={`Tree ${treeIndex} color`}
+                      value={filterState.treeColors[key] ?? '#91C2F4'}
+                      onChange={event =>
+                        controller?.setTreeColor?.(
+                          treeIndex,
+                          event.target.value,
+                        )
+                      }
+                    />
+                    {filterState.treeColors[key] ? (
+                      <button
+                        type="button"
+                        className={classes.linkButton}
+                        onClick={() => controller?.clearTreeColor?.(treeIndex)}
+                      >
+                        Clear
+                      </button>
+                    ) : null}
+                  </Box>
+                )
+              })
+            ) : (
+              <Typography sx={{ p: 1 }} color="text.secondary">
+                No visible trees
+              </Typography>
+            )}
+          </Box>
+        ) : null}
+      </Box>
+    </Box>
+  )
+}
+
 function TabPanel(props: {
   children: ReactNode
   value: number
@@ -540,10 +1075,19 @@ const LoraxMetadataWidget = observer(function LoraxMetadataWidget({
   model: LoraxMetadataWidgetModel
 }) {
   const { classes } = useStyles()
-  const [tab, setTab] = useState(0)
+  const [tab, setTab] = useState(
+    typeof model.activeTab === 'number' ? model.activeTab : 0,
+  )
   const parsed = parseSnapshot(model.snapshot)
   const selectedDetail = parseSelectedDetail(model.selectedDetail)
   const detailsState = parseDetailsState(model.detailsState)
+  const filterState = parseFilterState(model.filterState)
+
+  useEffect(() => {
+    if (typeof model.activeTab === 'number' && model.activeTab !== tab) {
+      setTab(model.activeTab)
+    }
+  }, [model.activeTab, tab])
 
   const { config = {} } = parsed ?? {}
 
@@ -563,7 +1107,10 @@ const LoraxMetadataWidget = observer(function LoraxMetadataWidget({
     <Paper className={classes.paper} data-testid="lorax-metadata-widget">
       <Tabs
         value={tab}
-        onChange={(_e, v: number) => setTab(v)}
+        onChange={(_e, v: number) => {
+          setTab(v)
+          model.setActiveTab?.(v)
+        }}
         textColor="primary"
         indicatorColor="primary"
         variant="fullWidth"
@@ -580,14 +1127,19 @@ const LoraxMetadataWidget = observer(function LoraxMetadataWidget({
           aria-controls="lorax-metadata-tabpanel-1"
         />
         <Tab
-          label="Metadata"
+          label="Filter"
           id="lorax-metadata-tab-2"
           aria-controls="lorax-metadata-tabpanel-2"
         />
         <Tab
-          label="Selection"
+          label="Metadata"
           id="lorax-metadata-tab-3"
           aria-controls="lorax-metadata-tabpanel-3"
+        />
+        <Tab
+          label="Selection"
+          id="lorax-metadata-tab-4"
+          aria-controls="lorax-metadata-tabpanel-4"
         />
       </Tabs>
 
@@ -632,6 +1184,15 @@ const LoraxMetadataWidget = observer(function LoraxMetadataWidget({
       </TabPanel>
 
       <TabPanel value={tab} index={2}>
+        <div className={classes.tabPanel}>
+          <FilterContent
+            filterState={filterState}
+            controller={model.filterController}
+          />
+        </div>
+      </TabPanel>
+
+      <TabPanel value={tab} index={3}>
         <div className={classes.tabPanel}>
           {[
             project,
@@ -710,7 +1271,7 @@ const LoraxMetadataWidget = observer(function LoraxMetadataWidget({
           </Accordion>
         </div>
       </TabPanel>
-      <TabPanel value={tab} index={3}>
+      <TabPanel value={tab} index={4}>
         <div className={classes.tabPanel}>
           {!selectedDetail ? (
             <Typography color="text.secondary">

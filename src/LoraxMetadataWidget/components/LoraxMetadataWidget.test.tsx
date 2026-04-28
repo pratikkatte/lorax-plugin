@@ -1,5 +1,5 @@
 import React from 'react'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import type * as ReactNamespace from 'react'
 
 interface MockProps {
@@ -15,6 +15,13 @@ jest.mock('tss-react/mui', () => ({
       sectionHeader: 'sectionHeader',
       tabPanel: 'tabPanel',
       trackTitle: 'trackTitle',
+      filterBox: 'filterBox',
+      filterInput: 'filterInput',
+      filterRow: 'filterRow',
+      linkButton: 'linkButton',
+      tag: 'tag',
+      valueList: 'valueList',
+      valueRow: 'valueRow',
     },
   }),
 }))
@@ -80,6 +87,9 @@ function renderWidget(modelOverrides: Record<string, unknown> = {}) {
           snapshot: { config: {} },
           selectedDetail: null,
           detailsState: null,
+          filterState: null,
+          filterController: null,
+          activeTab: 0,
           ...modelOverrides,
         } as never
       }
@@ -222,5 +232,145 @@ describe('LoraxMetadataWidget Details tab', () => {
     expect(
       screen.getByText('Error fetching details: backend failed'),
     ).toBeTruthy()
+  })
+})
+
+describe('LoraxMetadataWidget Filter tab', () => {
+  const filterState = {
+    tsconfig: {
+      project: '1000Genomes',
+      filename: '1kg_chr2.trees.tsz',
+      tree_info: false,
+    },
+    searchTerm: '',
+    searchTags: ['GBR'],
+    selectedColorBy: 'name',
+    coloryby: { name: 'Population' },
+    metadataColors: {
+      name: {
+        GBR: [79, 182, 193, 255],
+        CHS: [154, 148, 89, 255],
+      },
+    },
+    loadedMetadata: { name: 'pyarrow' },
+    enabledValues: ['GBR', 'CHS'],
+    highlightedMetadataValue: 'GBR',
+    displayLineagePaths: true,
+    visibleTrees: [10, 11],
+    treeColors: { '10': '#91C2F4' },
+    colorByTree: false,
+    hoveredTreeIndex: null,
+    activeFeatureId: null,
+  }
+
+  it('renders an empty filter state', () => {
+    renderWidget({ activeTab: 2 })
+
+    expect(screen.getAllByText('No metadata available').length).toBeGreaterThan(
+      0,
+    )
+    expect(screen.getByText('No visible trees')).toBeTruthy()
+  })
+
+  it('renders metadata filter controls from filterState', () => {
+    renderWidget({ activeTab: 2, filterState })
+
+    expect(screen.getByLabelText('Metadata key')).toBeTruthy()
+    expect(screen.getAllByText('GBR').length).toBeGreaterThan(0)
+    expect(screen.getByText('CHS')).toBeTruthy()
+    expect(screen.getByText('Feature presets')).toBeTruthy()
+    expect(screen.getByText('Tree 10')).toBeTruthy()
+  })
+
+  it('calls controller actions for search tags and enabled values', () => {
+    const controller = {
+      removeSearchTag: jest.fn(),
+      toggleEnabledValue: jest.fn(),
+      addSearchTag: jest.fn(),
+    }
+    renderWidget({ activeTab: 2, filterState, filterController: controller })
+
+    fireEvent.click(screen.getByLabelText('Remove GBR'))
+    expect(controller.removeSearchTag).toHaveBeenCalledWith(0)
+
+    fireEvent.click(screen.getAllByText('Remove')[0])
+    expect(controller.toggleEnabledValue).toHaveBeenCalledWith('GBR')
+
+    fireEvent.click(screen.getAllByText('Search')[1])
+    expect(controller.addSearchTag).toHaveBeenCalledWith('GBR')
+  })
+
+  it('calls controller actions for key selection and color changes', () => {
+    const controller = {
+      setSelectedColorBy: jest.fn(),
+      setSearchTerm: jest.fn(),
+      setSearchTags: jest.fn(),
+      setMetadataColor: jest.fn(),
+    }
+    renderWidget({ activeTab: 2, filterState, filterController: controller })
+
+    fireEvent.change(screen.getByLabelText('Metadata key'), {
+      target: { value: 'name' },
+    })
+    expect(controller.setSelectedColorBy).toHaveBeenCalledWith('name')
+
+    fireEvent.change(screen.getByLabelText('Color for CHS'), {
+      target: { value: '#010203' },
+    })
+    expect(controller.setMetadataColor).toHaveBeenCalledWith(
+      'name',
+      'CHS',
+      [1, 2, 3, 255],
+    )
+  })
+
+  it('calls preset controller actions', () => {
+    const controller = {
+      applyPresetFeature: jest.fn(),
+      disablePresetFeature: jest.fn(),
+    }
+    const { rerender } = render(
+      <LoraxMetadataWidget
+        model={
+          {
+            id: 'loraxMetadata',
+            type: 'LoraxMetadataWidget',
+            trackLabel: 'Lorax',
+            snapshot: { config: {} },
+            selectedDetail: null,
+            detailsState: null,
+            filterState,
+            filterController: controller,
+            activeTab: 2,
+          } as never
+        }
+      />,
+    )
+
+    fireEvent.click(screen.getByTitle('Enable preset'))
+    expect(controller.applyPresetFeature).toHaveBeenCalled()
+
+    rerender(
+      <LoraxMetadataWidget
+        model={
+          {
+            id: 'loraxMetadata',
+            type: 'LoraxMetadataWidget',
+            trackLabel: 'Lorax',
+            snapshot: { config: {} },
+            selectedDetail: null,
+            detailsState: null,
+            filterState: {
+              ...filterState,
+              activeFeatureId: 'lactase_persistence',
+            },
+            filterController: controller,
+            activeTab: 2,
+          } as never
+        }
+      />,
+    )
+    fireEvent.click(screen.getByTitle('Disable preset'))
+    expect(controller.disablePresetFeature).toHaveBeenCalled()
   })
 })
