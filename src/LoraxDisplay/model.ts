@@ -8,6 +8,40 @@ import type { MenuItem } from '@jbrowse/core/ui'
 /** Stable drawer widget instance id (see LoraxMetadataWidget). */
 export const LORAX_METADATA_WIDGET_ID = 'loraxMetadata'
 
+function sanitizeSnapshot(snapshot: unknown) {
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
+    return snapshot
+  }
+  const obj = snapshot as Record<string, unknown>
+  const config =
+    obj.config && typeof obj.config === 'object' && !Array.isArray(obj.config)
+      ? (obj.config as Record<string, unknown>)
+      : undefined
+  const { loraxSid: _loraxSid, ...rest } = obj
+  if (!config) {
+    return rest
+  }
+  const {
+    sid: _sid,
+    intervals,
+    mutations,
+    metadata_schema,
+    ...configRest
+  } = config
+  return {
+    ...rest,
+    config: {
+      ...configRest,
+      intervals_count: Array.isArray(intervals) ? intervals.length : undefined,
+      mutations_count: Array.isArray(mutations) ? mutations.length : undefined,
+      metadata_schema_keys:
+        metadata_schema && typeof metadata_schema === 'object'
+          ? Object.keys(metadata_schema as Record<string, unknown>).length
+          : undefined,
+    },
+  }
+}
+
 export default function stateModelFactory(configSchema: AnyConfigurationSchemaType) {
   const model = types.compose('LoraxDisplay', BaseDisplay, types.model({
     type: types.literal('LoraxDisplay'),
@@ -32,7 +66,7 @@ export default function stateModelFactory(configSchema: AnyConfigurationSchemaTy
         self.metadataViewEnabled = value
       },
       setLoadResultSnapshot(snapshot: unknown) {
-        self.loadResultSnapshot = snapshot
+        self.loadResultSnapshot = sanitizeSnapshot(snapshot)
       },
     }))
     .views((self) => ({

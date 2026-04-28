@@ -1,165 +1,346 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import '@luma.gl/webgl'
 import {
-    getContainingTrack,
-    getContainingView,
-    getEnv,
-    getSession,
-    isSessionModelWithWidgets,
-  } from '@jbrowse/core/util'
-  import { observer } from 'mobx-react'
-  import { readConfObject } from '@jbrowse/core/configuration'
-  import { getAdapter } from '@jbrowse/core/data_adapters/dataAdapterCache'
-  import { LoraxDeckGL, LoraxProvider, useLorax } from '@lorax/core'
-  import { LORAX_METADATA_WIDGET_ID, LoraxDisplayModel } from '../model'
-  import type { LinearGenomeViewModel } from '@jbrowse/plugin-linear-genome-view'
-  
-  function hasLoadFile(
-    adapter: unknown,
-  ): adapter is { loadFile: () => Promise<unknown> } {
-    return Boolean(adapter && typeof (adapter as { loadFile?: unknown }).loadFile === 'function')
+  getContainingTrack,
+  getContainingView,
+  getEnv,
+  getSession,
+  isSessionModelWithWidgets,
+} from '@jbrowse/core/util'
+import { observer } from 'mobx-react'
+import { readConfObject } from '@jbrowse/core/configuration'
+import { getAdapter } from '@jbrowse/core/data_adapters/dataAdapterCache'
+import { LoraxDeckGL, LoraxProvider, useLorax } from '@lorax/core'
+import {
+  buildDetailsRequestForPick,
+  type SelectionDetail,
+} from '../detailsRequest'
+import { LORAX_METADATA_WIDGET_ID, LoraxDisplayModel } from '../model'
+import type { LinearGenomeViewModel } from '@jbrowse/plugin-linear-genome-view'
+
+function hasLoadFile(
+  adapter: unknown,
+): adapter is { loadFile: () => Promise<unknown> } {
+  return Boolean(
+    adapter &&
+      typeof (adapter as { loadFile?: unknown }).loadFile === 'function',
+  )
+}
+
+function resolveApiBaseFromConfig(adapterConfig: unknown) {
+  const configured = adapterConfig
+    ? (readConfObject(
+        adapterConfig as Parameters<typeof readConfObject>[0],
+        'apiBase',
+      ) as string)
+    : undefined
+  if (configured) {
+    return configured
   }
 
-  type LoadFileResult = {
-    config?: {
-      initial_position?: [number, number]
-      project?: string
-      sid?: string
-    }
-    /** Lorax session ID from adapter - used for session unification with LoraxProvider */
-    loraxSid?: string
+  const { protocol, hostname, port, origin } = window.location
+  const isLocalhostHost =
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '0.0.0.0'
+  if (isLocalhostHost && port !== '8080') {
+    return `${protocol}//${hostname}:8080`
   }
-  
-  function serializeLoadSnapshotForDrawer(result: LoadFileResult | null): unknown {
-    if (!result) {
-      return null
-    }
-    try {
-      return JSON.parse(
-        JSON.stringify({
-          loraxSid: result.loraxSid,
-          config: result.config,
-        }),
-      )
-    } catch {
-      return null
-    }
+
+  return origin
+}
+
+type LoadFileResult = {
+  config?: {
+    initial_position?: [number, number]
+    project?: string
+    sid?: string
   }
-  
-  type OffsetPercent = {
-    leftOffsetPercent: number
-    rightOffsetPercent: number
-    widthPercent: number
-    isOffFlowLeft: boolean
-    isOffFlowRight: boolean
-    isOffFlow: boolean
+  /** Lorax session ID from adapter - used for session unification with LoraxProvider */
+  loraxSid?: string
+}
+
+function sanitizeConfigForPersistence(config: LoadFileResult['config']) {
+  if (!config || typeof config !== 'object') {
+    return undefined
   }
-  
-  type HoverTooltipRow = { k: string; v: string | number | null | undefined }
-  type HoverTooltipState = {
-    kind: 'tip' | 'edge'
-    title: string
-    rows: HoverTooltipRow[]
-    x: number
-    y: number
+  const {
+    sid: _sid,
+    intervals,
+    mutations,
+    metadata_schema,
+    ...rest
+  } = config as Record<string, unknown>
+  return {
+    ...rest,
+    intervals_count: Array.isArray(intervals) ? intervals.length : undefined,
+    mutations_count: Array.isArray(mutations) ? mutations.length : undefined,
+    metadata_schema_keys:
+      metadata_schema && typeof metadata_schema === 'object'
+        ? Object.keys(metadata_schema as Record<string, unknown>).length
+        : undefined,
   }
-  
-  type SelectionDetail = {
-    kind: 'tip' | 'edge'
-    title: string
-    rows: HoverTooltipRow[]
-    raw: unknown
-  }
-  
-  type MetadataWidgetModel = {
-    id: string
-    setSnapshot?: (snapshot: unknown) => void
-    setSelectedDetail?: (detail: unknown) => void
-  }
-  
-  type DeckPickInfo = { x?: number; y?: number; object?: unknown }
-  type DeckPickEvent = { srcEvent?: MouseEvent | PointerEvent | TouchEvent }
-  
-  /** Screen coords for `position: fixed` — deck `info.x/y` are canvas-relative, not client. */
-  function getClientCoordsForTooltip(
-    info: DeckPickInfo,
-    event: DeckPickEvent,
-    trackRoot: HTMLElement | null,
-  ): { x: number; y: number } | null {
-    const src = event?.srcEvent
-    // if (src && 'clientX' in src && 'clientY' in src) {
-    //   const cx = src.clientX
-    //   const cy = src.clientY
-    //   if (Number.isFinite(cx) && Number.isFinite(cy)) {
-    //     return { x: cx, y: cy }
-    //   }
-    // }
-    const ix = info?.x
-    const iy = info?.y
-    if (ix && iy) { 
-      return { x: ix, y: iy }
-    }
+}
+
+function serializeLoadSnapshotForDrawer(
+  result: LoadFileResult | null,
+): unknown {
+  if (!result) {
     return null
   }
-  
-  function LoraxDeckContainer({
-    loadResult,
-    height,
-    viewConfig,
-    intervalCoords,
-    offsetPercent,
-    onTipHover,
-    onTipClick,
-    onEdgeHover,
-    onEdgeClick,
-  }: {
-    loadResult: LoadFileResult | null
-    height: number
-    viewConfig: Record<string, any>
-    intervalCoords: [number, number] | null
-    offsetPercent: OffsetPercent
-    onTipHover: (tip: unknown, info: DeckPickInfo, event: DeckPickEvent) => void
-    onTipClick: (tip: unknown, info: DeckPickInfo, event: DeckPickEvent) => void
-    onEdgeHover: (edge: unknown, info: DeckPickInfo, event: DeckPickEvent) => void
-    onEdgeClick: (edge: unknown, info: DeckPickInfo, event: DeckPickEvent) => void
-  }) {
-    const { handleConfigUpdate } = useLorax()
-  
-    useEffect(() => {
-      const config = loadResult?.config
-      if (!config) {
-        return
-      }
-      handleConfigUpdate(config, config.initial_position ?? null, config.project ?? null, config.sid ?? null)
-    }, [loadResult, handleConfigUpdate])
-    return (
-      <div
-        style={{
-          height,
-          // width: '100%',
-          left: `${offsetPercent.leftOffsetPercent}%`,
-          // right: `${offsetPercent.rightOffsetPercent}%`,
-          marginRight: `${offsetPercent.rightOffsetPercent}%`,
-          position: 'relative',
-        }}
-      >
-        <LoraxDeckGL
-          viewConfig={viewConfig}
-          showPolygons
-          treeLayersEnabled={true}
-          externalGenomicCoords={intervalCoords}
-          externalGenomicCoordsRequired
-          externalGenomicCoordsSync
-          onTipHover={onTipHover}
-          onTipClick={onTipClick}
-          onEdgeHover={onEdgeHover}
-          onEdgeClick={onEdgeClick}
-        />
-      </div>
+  try {
+    return JSON.parse(
+      JSON.stringify({
+        config: sanitizeConfigForPersistence(result.config),
+      }),
     )
+  } catch {
+    return null
   }
+}
 
-const LoraxComponent = observer(function LoraxComponent({ model }: { model: LoraxDisplayModel }) {
+type OffsetPercent = {
+  leftOffsetPercent: number
+  rightOffsetPercent: number
+  widthPercent: number
+  isOffFlowLeft: boolean
+  isOffFlowRight: boolean
+  isOffFlow: boolean
+}
+
+type HoverTooltipRow = { k: string; v: string | number | null | undefined }
+type HoverTooltipState = {
+  kind: 'tip' | 'edge'
+  title: string
+  rows: HoverTooltipRow[]
+  x: number
+  y: number
+}
+
+type DetailsState = {
+  selectedDetail: SelectionDetail
+  data: unknown
+  loading: boolean
+  error: string | null
+  treeIndex?: number
+}
+
+type MetadataWidgetModel = {
+  id: string
+  setSnapshot?: (snapshot: unknown) => void
+  setSelectedDetail?: (detail: unknown) => void
+  setDetailsState?: (detailsState: unknown) => void
+}
+
+type DeckPickInfo = { x?: number; y?: number; object?: unknown }
+type DeckPickEvent = { srcEvent?: MouseEvent | PointerEvent | TouchEvent }
+
+/** Screen coords for `position: fixed` — deck `info.x/y` are canvas-relative, not client. */
+function getClientCoordsForTooltip(
+  info: DeckPickInfo,
+  event: DeckPickEvent,
+  trackRoot: HTMLElement | null,
+): { x: number; y: number } | null {
+  const src = event?.srcEvent
+  // if (src && 'clientX' in src && 'clientY' in src) {
+  //   const cx = src.clientX
+  //   const cy = src.clientY
+  //   if (Number.isFinite(cx) && Number.isFinite(cy)) {
+  //     return { x: cx, y: cy }
+  //   }
+  // }
+  const ix = info?.x
+  const iy = info?.y
+  if (ix && iy) {
+    return { x: ix, y: iy }
+  }
+  return null
+}
+
+function LoraxDeckContainer({
+  loadResult,
+  height,
+  viewConfig,
+  intervalCoords,
+  offsetPercent,
+  onTipHover,
+  onEdgeHover,
+  onSelectionUpdate,
+}: {
+  loadResult: LoadFileResult | null
+  height: number
+  viewConfig: Record<string, any>
+  intervalCoords: [number, number] | null
+  offsetPercent: OffsetPercent
+  onTipHover: (tip: unknown, info: DeckPickInfo, event: DeckPickEvent) => void
+  onEdgeHover: (edge: unknown, info: DeckPickInfo, event: DeckPickEvent) => void
+  onSelectionUpdate: (
+    detail: SelectionDetail,
+    detailsState: DetailsState,
+  ) => void
+}) {
+  const { handleConfigUpdate, isConnected, statusMessage, queryDetails } =
+    useLorax()
+  const detailsRequestRef = useRef(0)
+
+  useEffect(() => {
+    const config = loadResult?.config
+    if (!config) {
+      return
+    }
+    handleConfigUpdate(
+      config,
+      config.initial_position ?? null,
+      config.project ?? null,
+      config.sid ?? null,
+    )
+  }, [loadResult, handleConfigUpdate])
+  const statusText =
+    statusMessage && typeof statusMessage === 'object'
+      ? String(
+          (statusMessage as { message?: string }).message ??
+            (statusMessage as { status?: string }).status ??
+            '',
+        )
+      : ''
+
+  const showConnectingOverlay = !isConnected
+
+  const requestSelectionDetails = useCallback(
+    async (
+      detail: SelectionDetail,
+      payload: Record<string, unknown>,
+      treeIndex?: number,
+    ) => {
+      const requestId = detailsRequestRef.current + 1
+      detailsRequestRef.current = requestId
+      onSelectionUpdate(detail, {
+        selectedDetail: detail,
+        data: null,
+        loading: true,
+        error: null,
+        treeIndex,
+      })
+
+      try {
+        const data = await queryDetails(payload)
+        if (detailsRequestRef.current !== requestId) {
+          return
+        }
+        if (data && typeof data === 'object' && 'error' in data) {
+          throw new Error(String((data as { error?: unknown }).error))
+        }
+        onSelectionUpdate(detail, {
+          selectedDetail: detail,
+          data,
+          loading: false,
+          error: null,
+          treeIndex,
+        })
+      } catch (error) {
+        if (detailsRequestRef.current !== requestId) {
+          return
+        }
+        const message = error instanceof Error ? error.message : String(error)
+        onSelectionUpdate(detail, {
+          selectedDetail: detail,
+          data: null,
+          loading: false,
+          error: message,
+          treeIndex,
+        })
+      }
+    },
+    [onSelectionUpdate, queryDetails],
+  )
+
+  const onTipClick = useCallback(
+    (tip: unknown, _info: DeckPickInfo, _event: DeckPickEvent) => {
+      const request = buildDetailsRequestForPick('tip', tip)
+      if (!request) return
+      void requestSelectionDetails(
+        request.detail,
+        request.payload,
+        request.treeIndex,
+      )
+    },
+    [requestSelectionDetails],
+  )
+
+  const onEdgeClick = useCallback(
+    (edge: unknown, _info: DeckPickInfo, _event: DeckPickEvent) => {
+      const request = buildDetailsRequestForPick('edge', edge)
+      if (!request) return
+      void requestSelectionDetails(
+        request.detail,
+        request.payload,
+        request.treeIndex,
+      )
+    },
+    [requestSelectionDetails],
+  )
+
+  return (
+    <div
+      style={{
+        height,
+        // width: '100%',
+        left: `${offsetPercent.leftOffsetPercent}%`,
+        // right: `${offsetPercent.rightOffsetPercent}%`,
+        marginRight: `${offsetPercent.rightOffsetPercent}%`,
+        position: 'relative',
+      }}
+    >
+      <LoraxDeckGL
+        viewConfig={viewConfig}
+        showPolygons
+        treeLayersEnabled={true}
+        externalGenomicCoords={intervalCoords}
+        externalGenomicCoordsRequired
+        externalGenomicCoordsSync
+        onTipHover={onTipHover}
+        onTipClick={onTipClick}
+        onEdgeHover={onEdgeHover}
+        onEdgeClick={onEdgeClick}
+      />
+      {showConnectingOverlay ? (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            pointerEvents: 'none',
+            zIndex: 10,
+          }}
+        >
+          <div
+            style={{
+              padding: '6px 12px',
+              borderRadius: 8,
+              background: 'rgba(17, 24, 39, 0.78)',
+              color: '#fff',
+              fontSize: 12,
+              fontWeight: 600,
+              textTransform: 'lowercase',
+            }}
+          >
+            {statusText
+              ? `connecting backend - ${statusText}`
+              : 'connecting backend'}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+const LoraxComponent = observer(function LoraxComponent({
+  model,
+}: {
+  model: LoraxDisplayModel
+}) {
   const view = getContainingView(model) as LinearGenomeViewModel
   const { height } = model
   const adapterConfig = model.adapterConfig
@@ -169,15 +350,24 @@ const LoraxComponent = observer(function LoraxComponent({ model }: { model: Lora
   const [loadResult, setLoadResult] = useState<LoadFileResult | null>(null)
   const [loadError, setLoadError] = useState<Error | null>(null)
   const [trackHeight, setTrackHeight] = useState(height)
-  const [hoverTooltip, setHoverTooltip] = useState<HoverTooltipState | null>(null)
-
+  const [hoverTooltip, setHoverTooltip] = useState<HoverTooltipState | null>(
+    null,
+  )
 
   const clearHoverTooltip = useCallback(() => setHoverTooltip(null), [])
   const metadataWidgetRef = useRef<MetadataWidgetModel | null>(null)
 
   const setTooltipFromEvent = useCallback(
-    (base: Omit<HoverTooltipState, 'x' | 'y'>, info: DeckPickInfo, event: DeckPickEvent) => {
-      const xy = getClientCoordsForTooltip(info, event, trackContainerRef.current)
+    (
+      base: Omit<HoverTooltipState, 'x' | 'y'>,
+      info: DeckPickInfo,
+      event: DeckPickEvent,
+    ) => {
+      const xy = getClientCoordsForTooltip(
+        info,
+        event,
+        trackContainerRef.current,
+      )
       if (!xy) return
       setHoverTooltip({ ...base, x: xy.x, y: xy.y })
     },
@@ -213,7 +403,11 @@ const LoraxComponent = observer(function LoraxComponent({ model }: { model: Lora
         clearHoverTooltip()
         return
       }
-      const e = edge as { tree_idx?: number; parent_id?: number; child_id?: number }
+      const e = edge as {
+        tree_idx?: number
+        parent_id?: number
+        child_id?: number
+      }
       setTooltipFromEvent(
         {
           kind: 'edge',
@@ -232,7 +426,7 @@ const LoraxComponent = observer(function LoraxComponent({ model }: { model: Lora
   )
 
   const showMetadataWidgetForSelection = useCallback(
-    (detail: SelectionDetail) => {
+    (detail: SelectionDetail, detailsState: DetailsState) => {
       if (!isSessionModelWithWidgets(session)) {
         return
       }
@@ -240,24 +434,32 @@ const LoraxComponent = observer(function LoraxComponent({ model }: { model: Lora
       let trackLabel = 'Lorax'
       try {
         const track = getContainingTrack(model)
-        trackLabel = (readConfObject(track.configuration, 'name') as string) || trackLabel
+        trackLabel =
+          (readConfObject(track.configuration, 'name') as string) || trackLabel
       } catch {
         // display may not be mounted under a track yet
       }
-      const existingWidget =
-        session.widgets.get(LORAX_METADATA_WIDGET_ID) as MetadataWidgetModel | undefined
+      const existingWidget = session.widgets.get(LORAX_METADATA_WIDGET_ID) as
+        | MetadataWidgetModel
+        | undefined
       const existing = metadataWidgetRef.current ?? existingWidget
       if (existing && existingWidget) {
         existing.setSnapshot?.(snapshot)
         existing.setSelectedDetail?.(detail)
+        existing.setDetailsState?.(detailsState)
         metadataWidgetRef.current = existing
         session.showWidget(existingWidget)
       } else {
-        const widget = session.addWidget('LoraxMetadataWidget', LORAX_METADATA_WIDGET_ID, {
-          trackLabel,
-          snapshot,
-          selectedDetail: detail,
-        }) as MetadataWidgetModel
+        const widget = session.addWidget(
+          'LoraxMetadataWidget',
+          LORAX_METADATA_WIDGET_ID,
+          {
+            trackLabel,
+            snapshot,
+            selectedDetail: detail,
+            detailsState,
+          },
+        ) as MetadataWidgetModel
         metadataWidgetRef.current = widget
         session.showWidget(widget)
       }
@@ -266,61 +468,24 @@ const LoraxComponent = observer(function LoraxComponent({ model }: { model: Lora
     [session, loadResult, model],
   )
 
-  const onTipClick = useCallback(
-    (tip: unknown, _info: DeckPickInfo, _event: DeckPickEvent) => {
-      if (!tip) {
-        return
-      }
-      const t = tip as { tree_idx?: number; node_id?: number }
-      showMetadataWidgetForSelection({
-        kind: 'tip',
-        title: 'Selected tip',
-        rows: [
-          { k: 'Tree', v: t.tree_idx },
-          { k: 'Node ID', v: t.node_id },
-        ],
-        raw: tip,
-      })
-    },
-    [showMetadataWidgetForSelection],
-  )
-
-  const onEdgeClick = useCallback(
-    (edge: unknown, _info: DeckPickInfo, _event: DeckPickEvent) => {
-      if (!edge) {
-        return
-      }
-      const e = edge as { tree_idx?: number; parent_id?: number; child_id?: number }
-      showMetadataWidgetForSelection({
-        kind: 'edge',
-        title: 'Selected edge',
-        rows: [
-          { k: 'Tree', v: e.tree_idx },
-          { k: 'Parent', v: e.parent_id },
-          { k: 'Child', v: e.child_id },
-        ],
-        raw: edge,
-      })
-    },
-    [showMetadataWidgetForSelection],
-  )
-
-  const { offsetPx, width } = view as unknown as { offsetPx: number, width: number }
+  const { offsetPx, width } = view as unknown as {
+    offsetPx: number
+    width: number
+  }
 
   const bpToPx = useMemo(() => {
     const blocks = view?.dynamicBlocks?.contentBlocks
     return view?.bpToPx?.({
       refName: blocks?.[0]?.refName ?? '',
-      coord: blocks?.[0]?.start ?? 0
+      coord: blocks?.[0]?.start ?? 0,
     })
   }, [view, offsetPx, width])
-  
 
   const lastbpToPx = useMemo(() => {
     const blocks = view?.dynamicBlocks?.contentBlocks
     return view?.bpToPx?.({
       refName: blocks?.[blocks.length - 1]?.refName ?? '',
-      coord: blocks?.[blocks.length - 1]?.end ?? 0
+      coord: blocks?.[blocks.length - 1]?.end ?? 0,
     })
   }, [view, offsetPx, width])
 
@@ -337,7 +502,11 @@ const LoraxComponent = observer(function LoraxComponent({ model }: { model: Lora
     let isOffFlowLeft = false
     let isOffFlowRight = false
 
-    if (typeof offsetPx === 'number' && typeof width === 'number' && width > 0) {
+    if (
+      typeof offsetPx === 'number' &&
+      typeof width === 'number' &&
+      width > 0
+    ) {
       isOffFlowLeft = screenPosLeft < 0
       isOffFlowRight = screenPosRight > 0
 
@@ -352,7 +521,14 @@ const LoraxComponent = observer(function LoraxComponent({ model }: { model: Lora
 
     const isOffFlow = isOffFlowLeft || isOffFlowRight
 
-    return { leftOffsetPercent, rightOffsetPercent, widthPercent, isOffFlowLeft, isOffFlowRight, isOffFlow }
+    return {
+      leftOffsetPercent,
+      rightOffsetPercent,
+      widthPercent,
+      isOffFlowLeft,
+      isOffFlowRight,
+      isOffFlow,
+    }
   }, [offsetPx, width, bpToPx])
 
   useEffect(() => {
@@ -386,7 +562,12 @@ const LoraxComponent = observer(function LoraxComponent({ model }: { model: Lora
         setLoadResult(result)
         setLoadError(null)
         model.setLoadResultSnapshot(serializeLoadSnapshotForDrawer(result))
-        console.log('[LoraxPlugin] load_file result', { hasConfig: !!result?.config, loraxSid: result?.loraxSid, intervalsCount: (result?.config as { intervals?: unknown[] })?.intervals?.length })
+        console.log('[LoraxPlugin] load_file result', {
+          hasConfig: !!result?.config,
+          loraxSid: result?.loraxSid,
+          intervalsCount: (result?.config as { intervals?: unknown[] })
+            ?.intervals?.length,
+        })
       } catch (error) {
         if (cancelled) {
           return
@@ -406,8 +587,7 @@ const LoraxComponent = observer(function LoraxComponent({ model }: { model: Lora
   }, [adapterConfig, model])
 
   const apiBase = useMemo(() => {
-    if (!adapterConfig) return window.location.origin
-    return (readConfObject(adapterConfig, 'apiBase') as string) || window.location.origin
+    return resolveApiBaseFromConfig(adapterConfig)
   }, [adapterConfig])
 
   const isProd = useMemo(() => {
@@ -417,21 +597,26 @@ const LoraxComponent = observer(function LoraxComponent({ model }: { model: Lora
 
   const viewConfig = useMemo(
     () => ({
-      ortho: { enabled: true, x: '0%',
-        y: '5%',
-        width: '100%',
-        height: '95%' },
-      genomeInfo: { enabled: true, x: '0%',
+      ortho: { enabled: true, x: '0%', y: '5%', width: '100%', height: '95%' },
+      genomeInfo: {
+        enabled: true,
+        x: '0%',
         y: '3%',
         width: '100%',
-        height: '2%' },
+        height: '2%',
+      },
       genomePositions: { enabled: false },
 
-      treeTime: { enabled: true , x: '0.5%',
+      treeTime: {
+        enabled: true,
+        x: '0.5%',
         y: '5%',
         width: '4%',
-        height: '95%'},
-    }),[])
+        height: '95%',
+      },
+    }),
+    [],
+  )
 
   const intervalCoords = useMemo(() => {
     const blocks = view?.dynamicBlocks?.contentBlocks
@@ -444,7 +629,11 @@ const LoraxComponent = observer(function LoraxComponent({ model }: { model: Lora
       if (start < minStart) minStart = start
       if (end > maxEnd) maxEnd = end
     }
-    if (!Number.isFinite(minStart) || !Number.isFinite(maxEnd) || minStart >= maxEnd) {
+    if (
+      !Number.isFinite(minStart) ||
+      !Number.isFinite(maxEnd) ||
+      minStart >= maxEnd
+    ) {
       return null
     }
     return [minStart, maxEnd] as [number, number]
@@ -520,63 +709,72 @@ const LoraxComponent = observer(function LoraxComponent({ model }: { model: Lora
           intervalCoords={intervalCoords}
           offsetPercent={offsetPercent}
           onTipHover={onTipHover}
-          onTipClick={onTipClick}
           onEdgeHover={onEdgeHover}
-          onEdgeClick={onEdgeClick}
+          onSelectionUpdate={showMetadataWidgetForSelection}
         />
       </LoraxProvider>
-      {hoverTooltip && Number.isFinite(hoverTooltip.x) && Number.isFinite(hoverTooltip.y) && (
-        <div
-          style={{
-            position: 'fixed',
-            left: hoverTooltip.x + 12,
-            top: hoverTooltip.y + 12,
-            zIndex: 99999,
-            pointerEvents: 'none',
-            backgroundColor: '#fff',
-            boxShadow: '0 4px 20px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.08)',
-            borderRadius: 10,
-            minWidth: 180,
-            maxWidth: 320,
-            border: '1px solid rgba(0,0,0,0.08)',
-            overflow: 'hidden',
-            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-          }}
-        >
-          <div style={{ padding: '10px 12px', fontSize: 13, color: '#374151' }}>
-            {hoverTooltip.title && (
-              <div style={{ fontWeight: 700, color: '#111827', marginBottom: 6 }}>
-                {hoverTooltip.title}
-              </div>
-            )}
-            {Array.isArray(hoverTooltip.rows) &&
-              hoverTooltip.rows.map(row => (
+      {hoverTooltip &&
+        Number.isFinite(hoverTooltip.x) &&
+        Number.isFinite(hoverTooltip.y) && (
+          <div
+            style={{
+              position: 'fixed',
+              left: hoverTooltip.x + 12,
+              top: hoverTooltip.y + 12,
+              zIndex: 99999,
+              pointerEvents: 'none',
+              backgroundColor: '#fff',
+              boxShadow:
+                '0 4px 20px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.08)',
+              borderRadius: 10,
+              minWidth: 180,
+              maxWidth: 320,
+              border: '1px solid rgba(0,0,0,0.08)',
+              overflow: 'hidden',
+              fontFamily:
+                '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            }}
+          >
+            <div
+              style={{ padding: '10px 12px', fontSize: 13, color: '#374151' }}
+            >
+              {hoverTooltip.title && (
                 <div
-                  key={row.k}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    padding: '3px 0',
-                    borderBottom: '1px solid #f3f4f6',
-                  }}
+                  style={{ fontWeight: 700, color: '#111827', marginBottom: 6 }}
                 >
-                  <span style={{ color: '#6b7280', fontWeight: 500 }}>{row.k}</span>
-                  <span
+                  {hoverTooltip.title}
+                </div>
+              )}
+              {Array.isArray(hoverTooltip.rows) &&
+                hoverTooltip.rows.map(row => (
+                  <div
+                    key={row.k}
                     style={{
-                      fontWeight: 600,
-                      color: '#111827',
-                      maxWidth: 180,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      padding: '3px 0',
+                      borderBottom: '1px solid #f3f4f6',
                     }}
                   >
-                    {String(row.v)}
-                  </span>
-                </div>
-              ))}
+                    <span style={{ color: '#6b7280', fontWeight: 500 }}>
+                      {row.k}
+                    </span>
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        color: '#111827',
+                        maxWidth: 180,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {String(row.v)}
+                    </span>
+                  </div>
+                ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
     </div>
   )
 })
