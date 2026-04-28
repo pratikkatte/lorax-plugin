@@ -3,7 +3,7 @@ import { ConfigurationSchema } from '@jbrowse/core/configuration'
 export default ConfigurationSchema('LoraxAdapter', {
   apiBase: {
     type: 'string',
-    defaultValue: '',
+    defaultValue: 'http://localhost:8080',
   },
   filePath: {
     type: 'string',

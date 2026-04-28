@@ -74,6 +74,26 @@
         "apiBase": "http://localhost:8080",
         "filePath": "/home/pratik/.lorax/projects/1000Genomes/1kg_chr2.trees.tsz"
       }
+    },
+    {
+      "type": "LoraxTrack",
+      "trackId": "lorax_upload_track",
+      "name": "Lorax (upload-style config)",
+      "assemblyNames": [
+        "hg38"
+      ],
+      "category": [
+        "ARGs"
+      ],
+      "adapter": {
+        "type": "LoraxAdapter",
+        "apiBase": "http://localhost:8080",
+        "useUpload": true,
+        "fileLocation": {
+          "uri": "https://example.org/sample.csv",
+          "locationType": "UriLocation"
+        }
+      }
     }
   ]
 }

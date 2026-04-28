@@ -121,6 +121,21 @@ useful for writing integration tests for your plugin. Both the plugin and
 This template includes a [Github action](https://github.com/features/actions)
 that runs your integration tests when you push new changes to your repository.
 
+### Lorax add-track uploads
+
+This plugin supports two ways to add Lorax files (`.trees`, `.tree`, `.tsz`,
+`.csv`):
+
+- Use the default **Add track** workflow. The plugin now auto-detects these
+  extensions and maps them to `LoraxAdapter` + `LoraxTrack`.
+- Use the custom **Lorax upload track** workflow from the add-track workflow
+  dropdown for a file/URL-first form.
+
+For config-driven usage, your adapter can use either:
+
+- `filePath` for backend-accessible files.
+- `fileLocation` + `useUpload: true` for upload-style loading.
+
 ### Publishing to NPM
 
 Once you have developed your plugin, you can publish it to NPM. Remember to

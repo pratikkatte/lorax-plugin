@@ -11,6 +11,8 @@ import { version } from '../package.json'
 import LoraxTrackF from './LoraxTrack'
 import LoraxDisplayF from './LoraxDisplay'
 import LoraxAdapterF from './LoraxAdapter'
+import LoraxGuessAdapterF from './LoraxGuessAdapter'
+import LoraxAddTrackWorkflowF from './LoraxAddTrackWorkflow'
 import LoraxRPCMethodsF from './LoraxRPC'
 import LoraxMetadataWidgetF from './LoraxMetadataWidget'
 
@@ -22,6 +24,8 @@ export default class LoraxPlugin extends Plugin {
     LoraxTrackF(pluginManager)
     LoraxDisplayF(pluginManager)
     LoraxAdapterF(pluginManager)
+    LoraxGuessAdapterF(pluginManager)
+    LoraxAddTrackWorkflowF(pluginManager)
     LoraxRPCMethodsF(pluginManager)
     LoraxMetadataWidgetF(pluginManager)
   }
