@@ -1,28 +1,28 @@
 {
+  "name": "jbrowse-plugin-lorax",
   "version": "0.0.1",
-  "name": "jbrowse-plugin-template",
+  "private": true,
+  "description": "Lorax Plugin for Jbrowse",
   "keywords": [
     "jbrowse",
     "jbrowse2"
   ],
+  "homepage": "https://github.com/pratikkatte/lorax-plugin#readme",
+  "bugs": {
+    "url": "https://github.com/pratikkatte/lorax-plugin/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pratikkatte/lorax-plugin.git"
+  },
+  "license": "ISC",
+  "author": "Pratik Katte",
+  "type": "commonjs",
   "main": "dist/index.js",
-  "module": "dist/index.esm.js",
-  "typings": "dist/index.d.ts",
   "files": [
     "dist",
     "src"
   ],
-  "config": {
-    "port": 9000,
-    "browse": {
-      "port": 8999
-    },
-    "jbrowse": {
-      "plugin": {
-        "name": "Template"
-      }
-    }
-  },
   "scripts": {
     "setup": "npm-run-all setup:*",
     "setup:file": "ts-node scripts/setup.ts",
@@ -32,7 +32,7 @@
     "clean": "rimraf dist",
     "start": "npm-run-all --sequential clean --parallel start:*",
     "start:watch": "cross-env JB_NPM=false NODE_ENV=development rollup --config --watch --bundleConfigAsCjs",
-    "start:server": "serve --cors --listen $npm_package_config_port .",
+    "start:server": "node scripts/start-server-after-dist.js",
     "prebuild": "npm-run-all clean",
     "build": "rollup --config --bundleConfigAsCjs",
     "browse": "npm-run-all jbrowse:*",
@@ -47,22 +47,37 @@
     "prepack": "npm-run-all build",
     "postversion": "git push --follow-tags"
   },
-  "jbrowse-plugin": {
-    "name": "Template"
-  },
-  "peerDependencies": {
-    "@jbrowse/core": "^2.0.0"
+  "config": {
+    "port": 9000,
+    "browse": {
+      "port": 8999
+    },
+    "jbrowse": {
+      "plugin": {
+        "name": "Lorax"
+      }
+    }
   },
   "devDependencies": {
     "@babel/core": "^7.16.5",
+    "@babel/preset-env": "^7.16.4",
     "@babel/preset-react": "^7.10.4",
+    "@deck.gl/core": "^9.3.1",
+    "@deck.gl/extensions": "^9.3.1",
+    "@deck.gl/layers": "^9.3.1",
+    "@deck.gl/react": "^9.3.1",
+    "@deck.gl/widgets": "^9.3.1",
     "@emotion/react": "^11.10.4",
     "@jbrowse/cli": "^2.6.1",
     "@jbrowse/core": "^2.6.1",
     "@jbrowse/development-tools": "^2.1.1",
+    "@jbrowse/plugin-linear-genome-view": "^2.6.1",
+    "@lorax/core": "file:/storage2/pratik/git/lorax/lorax_main/packages/core",
+    "@math.gl/core": "^4.1.0",
     "@mui/material": "^5.10.5",
     "@mui/system": "^5.10.5",
     "@mui/x-data-grid": "^7.6.1",
+    "@rollup/plugin-babel": "^5.3.1",
     "@schemastore/package": "^0.0.10",
     "@testing-library/jest-dom": "^6.1.5",
     "@testing-library/react": "^15.0.0",
@@ -96,11 +111,20 @@
     "rxjs": "^7.8.1",
     "serve": "^14.2.0",
     "shx": "^0.3.3",
+    "socket.io-client": "^4.8.1",
     "start-server-and-test": "^2.0.0",
     "ts-jest": "^29.1.1",
     "ts-node": "^10.3.0",
     "tss-react": "^4.8.6",
     "typescript": "^5.3.3"
   },
-  "private": true
+  "peerDependencies": {
+    "@jbrowse/core": "^2.0.0",
+    "@jbrowse/plugin-linear-genome-view": "^2.0.0"
+  },
+  "module": "dist/index.esm.js",
+  "typings": "dist/index.d.ts",
+  "jbrowse-plugin": {
+    "name": "Lorax"
+  }
 }

@@ -1,4 +1,6 @@
-# jbrowse-plugin-template
+![Integration](git+https://github.com/pratikkatte/lorax-plugin/workflows/Integration/badge.svg?branch=main)
+
+# jbrowse-plugin-lorax
 
 > Template to quickly start a new JBrowse plugin
 

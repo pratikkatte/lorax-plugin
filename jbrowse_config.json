@@ -1,8 +1,79 @@
 {
   "plugins": [
     {
-      "name": "Template",
-      "url": "http://localhost:9000/dist/jbrowse-plugin-template.umd.development.js"
+      "name": "Lorax",
+      "url": "http://localhost:9000/dist/jbrowse-plugin-lorax.umd.development.js"
+    }
+  ],
+  "assemblies": [
+    {
+      "name": "hg38",
+      "aliases": [
+        "GRCh38"
+      ],
+      "sequence": {
+        "type": "ReferenceSequenceTrack",
+        "trackId": "P6R5xbRqRr",
+        "adapter": {
+          "type": "BgzipFastaAdapter",
+          "fastaLocation": {
+            "uri": "https://jbrowse.org/genomes/GRCh38/fasta/hg38.prefix.fa.gz"
+          },
+          "faiLocation": {
+            "uri": "https://jbrowse.org/genomes/GRCh38/fasta/hg38.prefix.fa.gz.fai"
+          },
+          "gziLocation": {
+            "uri": "https://jbrowse.org/genomes/GRCh38/fasta/hg38.prefix.fa.gz.gzi"
+          }
+        }
+      },
+      "refNameAliases": {
+        "adapter": {
+          "type": "RefNameAliasAdapter",
+          "location": {
+            "uri": "https://s3.amazonaws.com/jbrowse.org/genomes/GRCh38/hg38_aliases.txt"
+          }
+        }
+      },
+      "cytobands": {
+        "adapter": {
+          "type": "CytobandAdapter",
+          "uri": "https://s3.amazonaws.com/jbrowse.org/genomes/GRCh38/cytoBand.txt"
+        }
+      }
+    }
+  ],
+  "tracks": [
+    {
+      "type": "FeatureTrack",
+      "trackId": "genes",
+      "name": "NCBI RefSeq Genes",
+      "assemblyNames": [
+        "hg38"
+      ],
+      "category": [
+        "Genes"
+      ],
+      "adapter": {
+        "type": "Gff3TabixAdapter",
+        "uri": "https://s3.amazonaws.com/jbrowse.org/genomes/GRCh38/ncbi_refseq/GCA_000001405.15_GRCh38_full_analysis_set.refseq_annotation.sorted.gff.gz"
+      }
+    },
+    {
+      "type": "LoraxTrack",
+      "trackId": "lorax_track",
+      "name": "Lorax",
+      "assemblyNames": [
+        "hg38"
+      ],
+      "category": [
+        "ARGs"
+      ],
+      "adapter": {
+        "type": "LoraxAdapter",
+        "apiBase": "http://localhost:8080",
+        "filePath": "/home/pratik/.lorax/projects/1000Genomes/1kg_chr2.trees.tsz"
+      }
     }
   ]
 }
