@@ -76,6 +76,7 @@ export default function stateModelFactory(
     types.model({
       type: types.literal('LoraxDisplay'),
       configuration: ConfigurationReference(configSchema),
+      fileInfoDialogOpen: types.optional(types.boolean, false),
       metadataViewEnabled: types.optional(types.boolean, false),
       /** Serializable snapshot of last load_file result for the metadata drawer. */
       loadResultSnapshot: types.optional(types.frozen(), null),
@@ -92,6 +93,15 @@ export default function stateModelFactory(
       setMetadataView(value: boolean) {
         self.metadataViewEnabled = value
       },
+      setFileInfoDialogOpen(value: boolean) {
+        self.fileInfoDialogOpen = value
+      },
+      openFileInfoDialog() {
+        self.fileInfoDialogOpen = true
+      },
+      closeFileInfoDialog() {
+        self.fileInfoDialogOpen = false
+      },
       setLoadResultSnapshot(snapshot: unknown) {
         self.loadResultSnapshot = sanitizeSnapshot(snapshot)
       },
@@ -99,6 +109,12 @@ export default function stateModelFactory(
     .views(self => ({
       trackMenuItems(): MenuItem[] {
         return [
+          {
+            label: 'File Info',
+            onClick: () => {
+              self.openFileInfoDialog()
+            },
+          },
           {
             type: 'checkbox',
             label: 'Metadata view',

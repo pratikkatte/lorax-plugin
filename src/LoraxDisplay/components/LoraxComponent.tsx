@@ -19,6 +19,7 @@ import { metadataFeatureActions } from '../../LoraxMetadataWidget/metadataFeatur
 import type { MetadataFeature } from '../../LoraxMetadataWidget/metadataFeatureConfig'
 import { metadataFeatureConfig } from '../../LoraxMetadataWidget/metadataFeatureConfig'
 import type { LinearGenomeViewModel } from '@jbrowse/plugin-linear-genome-view'
+import FileInfoDialog from './FileInfoDialog'
 
 function hasLoadFile(
   adapter: unknown,
@@ -1388,6 +1389,11 @@ const LoraxComponent = observer(function LoraxComponent({
           onSelectionUpdate={showMetadataWidgetForSelection}
         />
       </LoraxProvider>
+      <FileInfoDialog
+        open={model.fileInfoDialogOpen}
+        onClose={() => model.closeFileInfoDialog()}
+        snapshot={model.loadResultSnapshot}
+      />
       {hoverTooltip &&
         Number.isFinite(hoverTooltip.x) &&
         Number.isFinite(hoverTooltip.y) && (
