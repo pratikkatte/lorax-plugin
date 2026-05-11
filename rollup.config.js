@@ -32,6 +32,12 @@ function withWorkerInlineExternal(external) {
     '@jbrowse/core/ui/BaseTooltip',
     '@jbrowse/core/ui/ErrorBoundary',
     '@jbrowse/core/util/stopToken',
+    // JBrowse re-exports @mui/material/styles as { MUIStyles, makeStyles } rather
+    // than as the flat namespace, so createTheme etc. are not at the top level.
+    // Bundle our own copy so imports like `import { createTheme } from
+    // '@mui/material/styles'` resolve correctly. createTheme is a pure function
+    // with no dependency on emotion instance identity, so a second copy is safe.
+    '@mui/material/styles',
   ])
   return id => {
     if (typeof id === 'string' && forceBundle.has(id)) {
