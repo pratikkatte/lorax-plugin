@@ -5,7 +5,6 @@ import {
   getContainingView,
   getEnv,
   getSession,
-  isSessionModelWithWidgets,
 } from '@jbrowse/core/util'
 import { observer } from 'mobx-react'
 import { readConfObject } from '@jbrowse/core/configuration'
@@ -105,10 +104,14 @@ function serializeLoadSnapshotForDrawer(
 type OffsetPercent = {
   leftOffsetPercent: number
   rightOffsetPercent: number
-  widthPercent: number
   isOffFlowLeft: boolean
   isOffFlowRight: boolean
   isOffFlow: boolean
+}
+
+interface TrackSize {
+  width: number
+  height: number
 }
 
 type HoverTooltipRow = { k: string; v: string | number | null | undefined }
@@ -136,6 +139,25 @@ type MetadataWidgetModel = {
   setFilterState?: (filterState: unknown) => void
   setFilterController?: (filterController: unknown) => void
   setActiveTab?: (activeTab: number) => void
+}
+
+interface WidgetSession {
+  addWidget: (...args: unknown[]) => unknown
+  showWidget: (widget: unknown) => void
+  widgets: {
+    get: (id: string) => unknown
+  }
+}
+
+function isWidgetSession(session: unknown): session is WidgetSession {
+  const candidate = session as Partial<WidgetSession> | null | undefined
+  return Boolean(
+    candidate &&
+      typeof candidate.addWidget === 'function' &&
+      typeof candidate.showWidget === 'function' &&
+      candidate.widgets &&
+      typeof candidate.widgets.get === 'function',
+  )
 }
 
 type DeckPickInfo = { x?: number; y?: number; object?: unknown }
@@ -232,6 +254,7 @@ function LoraxDeckContainer({
   deckRef,
   loadResult,
   height,
+  width,
   viewConfig,
   intervalCoords,
   offsetPercent,
@@ -249,6 +272,7 @@ function LoraxDeckContainer({
   deckRef: React.RefObject<DeckRef>
   loadResult: LoadFileResult | null
   height: number
+  width: number
   viewConfig: Record<string, any>
   intervalCoords: [number, number] | null
   offsetPercent: OffsetPercent
@@ -370,10 +394,13 @@ function LoraxDeckContainer({
   return (
     <div
       style={{
+        boxSizing: 'border-box',
         height,
-        // width: '100%',
+        maxWidth: '100%',
+        minWidth: 0,
+        overflow: 'hidden',
+        width: width > 0 ? width : '100%',
         left: `${offsetPercent.leftOffsetPercent}%`,
-        // right: `${offsetPercent.rightOffsetPercent}%`,
         marginRight: `${offsetPercent.rightOffsetPercent}%`,
         position: 'relative',
       }}
@@ -807,7 +834,7 @@ function LoraxMetadataWidgetBridge({
   )
 
   const ensureFilterWidget = useCallback(() => {
-    if (!isSessionModelWithWidgets(session)) {
+    if (!isWidgetSession(session)) {
       return
     }
     const snapshot = serializeLoadSnapshotForDrawer(loadResult)
@@ -882,7 +909,10 @@ const LoraxComponent = observer(function LoraxComponent({
 
   const [loadResult, setLoadResult] = useState<LoadFileResult | null>(null)
   const [loadError, setLoadError] = useState<Error | null>(null)
-  const [trackHeight, setTrackHeight] = useState(height)
+  const [trackSize, setTrackSize] = useState<TrackSize>({
+    width: 0,
+    height,
+  })
   const [hoverTooltip, setHoverTooltip] = useState<HoverTooltipState | null>(
     null,
   )
@@ -1024,7 +1054,7 @@ const LoraxComponent = observer(function LoraxComponent({
 
   const showMetadataWidgetForSelection = useCallback(
     (detail: SelectionDetail, detailsState: DetailsState) => {
-      if (!isSessionModelWithWidgets(session)) {
+      if (!isWidgetSession(session)) {
         return
       }
       const snapshot = serializeLoadSnapshotForDrawer(loadResult)
@@ -1089,13 +1119,11 @@ const LoraxComponent = observer(function LoraxComponent({
   const offsetPercent = useMemo(() => {
     const bpToPxOffset = bpToPx?.offsetPx
     const lastbpToPxOffset = lastbpToPx?.offsetPx
-    const screenPos = bpToPxOffset ? bpToPxOffset - offsetPx : 0
     const screenPosLeft = bpToPxOffset ? bpToPxOffset - offsetPx : 0
     const screenPosRight = lastbpToPxOffset ? lastbpToPxOffset - offsetPx : 0
 
     let leftOffsetPercent = 0
     let rightOffsetPercent = 0
-    let widthPercent = 0
     let isOffFlowLeft = false
     let isOffFlowRight = false
 
@@ -1121,12 +1149,11 @@ const LoraxComponent = observer(function LoraxComponent({
     return {
       leftOffsetPercent,
       rightOffsetPercent,
-      widthPercent,
       isOffFlowLeft,
       isOffFlowRight,
       isOffFlow,
     }
-  }, [offsetPx, width, bpToPx])
+  }, [offsetPx, width, bpToPx, lastbpToPx])
 
   useEffect(() => {
     if (!adapterConfig) {
@@ -1176,7 +1203,7 @@ const LoraxComponent = observer(function LoraxComponent({
       }
     }
 
-    run()
+    void run()
 
     return () => {
       cancelled = true
@@ -1239,11 +1266,13 @@ const LoraxComponent = observer(function LoraxComponent({
   useEffect(() => {
     if (!view?.dynamicBlocks?.contentBlocks) return
     console.log('[LoraxPlugin] dynamic blocks', {
-      blocks: view.dynamicBlocks.contentBlocks.map(block => ({
-        refName: block.refName,
-        start: block.start,
-        end: block.end,
-      })),
+      blocks: view.dynamicBlocks.contentBlocks.map(
+        (block: { refName?: string; start?: number; end?: number }) => ({
+          refName: block.refName,
+          start: block.start,
+          end: block.end,
+        }),
+      ),
       intervalCoords,
     })
   }, [view?.dynamicBlocks?.contentBlocks, intervalCoords])
@@ -1251,22 +1280,37 @@ const LoraxComponent = observer(function LoraxComponent({
   useEffect(() => {
     const element = trackContainerRef.current
     if (!element) {
-      setTrackHeight(height)
+      setTrackSize(prev => ({ ...prev, height }))
       return
     }
 
-    const updateTrackHeight = (nextHeight: number) => {
-      setTrackHeight(nextHeight > 0 ? nextHeight : height)
+    const updateTrackSize = (nextWidth: number, nextHeight: number) => {
+      const normalizedWidth = nextWidth > 0 ? nextWidth : 0
+      const normalizedHeight = nextHeight > 0 ? nextHeight : height
+      setTrackSize(prev => {
+        if (
+          prev.width === normalizedWidth &&
+          prev.height === normalizedHeight
+        ) {
+          return prev
+        }
+        return {
+          width: normalizedWidth,
+          height: normalizedHeight,
+        }
+      })
     }
 
-    updateTrackHeight(element.getBoundingClientRect().height)
+    const rect = element.getBoundingClientRect()
+    updateTrackSize(rect.width, rect.height)
 
     if (typeof ResizeObserver === 'undefined') {
       return
     }
 
     const resizeObserver = new ResizeObserver(entries => {
-      updateTrackHeight(entries[0]?.contentRect.height ?? 0)
+      const { contentRect } = entries[0] ?? {}
+      updateTrackSize(contentRect?.width ?? 0, contentRect?.height ?? 0)
     })
     resizeObserver.observe(element)
 
@@ -1286,7 +1330,12 @@ const LoraxComponent = observer(function LoraxComponent({
   return (
     <div
       ref={trackContainerRef}
-      style={{ height: '100%', position: 'relative' }}
+      style={{
+        height: '100%',
+        minWidth: 0,
+        position: 'relative',
+        width: '100%',
+      }}
       onMouseLeave={clearHoverTooltip}
     >
       <LoraxProvider
@@ -1295,7 +1344,7 @@ const LoraxComponent = observer(function LoraxComponent({
         enableConfig
         enableMetadataFilter
         rpcManager={session?.rpcManager}
-        rpcSessionId={session?.id || 'default'}
+        rpcSessionId={session?.id ?? 'default'}
         urlSyncEnabled={false}
         disableInlineWorkers
         sessionOverride={loadResult?.loraxSid}
@@ -1322,7 +1371,8 @@ const LoraxComponent = observer(function LoraxComponent({
         <LoraxDeckContainer
           deckRef={deckRef}
           loadResult={loadResult}
-          height={trackHeight}
+          height={trackSize.height}
+          width={trackSize.width}
           viewConfig={viewConfig}
           intervalCoords={intervalCoords}
           offsetPercent={offsetPercent}
@@ -1332,7 +1382,7 @@ const LoraxComponent = observer(function LoraxComponent({
           highlightedMutationNode={highlightedMutationNode}
           highlightedMutationTreeIndex={highlightedMutationTreeIndex}
           onTreeLoadingChange={handleTreeLoadingChange}
-          onVisibleTreesChange={trees => setVisibleTrees(trees || [])}
+          onVisibleTreesChange={trees => setVisibleTrees(trees ?? [])}
           onTipHover={onTipHover}
           onEdgeHover={onEdgeHover}
           onSelectionUpdate={showMetadataWidgetForSelection}

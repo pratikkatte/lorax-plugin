@@ -13,6 +13,7 @@ function babelForLoraxCore() {
     extensions: ['.js', '.jsx', '.mjs'],
     include: [
       /[/\\]node_modules[/\\]@lorax[/\\]core[/\\]/,
+      /[/\\]lorax_main[/\\]packages[/\\]core[/\\]/,
       /[/\\]node_modules[/\\]@deck\.gl[/\\]/,
       /[/\\]node_modules[/\\]@luma\.gl[/\\]/,
       /[/\\]node_modules[/\\]@math\.gl[/\\]/,

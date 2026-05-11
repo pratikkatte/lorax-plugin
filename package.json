@@ -72,7 +72,7 @@
     "@jbrowse/core": "^2.6.1",
     "@jbrowse/development-tools": "^2.1.1",
     "@jbrowse/plugin-linear-genome-view": "^2.6.1",
-    "@lorax/core": "file:/storage2/pratik/git/lorax/lorax_main/packages/core",
+    "@lorax/core": "file:../lorax_main/packages/core",
     "@math.gl/core": "^4.1.0",
     "@mui/material": "^5.10.5",
     "@mui/system": "^5.10.5",
