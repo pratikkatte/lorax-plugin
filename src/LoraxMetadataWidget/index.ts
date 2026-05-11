@@ -22,22 +22,18 @@ function sanitizeSnapshot(snapshot: unknown) {
   if (!config) {
     return rest
   }
-  const {
-    sid: _sid,
-    intervals,
-    mutations,
-    metadata_schema,
-    ...configRest
-  } = config
+  const { sid: _sid, intervals, mutations, ...configRest } = config
+  const metadataSchema = config.metadata_schema
   return {
     ...rest,
     config: {
       ...configRest,
+      metadata_schema: metadataSchema,
       intervals_count: Array.isArray(intervals) ? intervals.length : undefined,
       mutations_count: Array.isArray(mutations) ? mutations.length : undefined,
       metadata_schema_keys:
-        metadata_schema && typeof metadata_schema === 'object'
-          ? Object.keys(metadata_schema as Record<string, unknown>).length
+        metadataSchema && typeof metadataSchema === 'object'
+          ? Object.keys(metadataSchema as Record<string, unknown>).length
           : undefined,
     },
   }

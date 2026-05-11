@@ -246,6 +246,9 @@ describe('LoraxMetadataWidget Filter tab', () => {
     searchTags: ['GBR'],
     selectedColorBy: 'name',
     coloryby: { name: 'Population' },
+    metadataOptionGroups: [],
+    metadataLoading: false,
+    metadataSchema: null,
     metadataColors: {
       name: {
         GBR: [79, 182, 193, 255],
@@ -280,6 +283,99 @@ describe('LoraxMetadataWidget Filter tab', () => {
     expect(screen.getByText('CHS')).toBeTruthy()
     expect(screen.getByText('Feature presets')).toBeTruthy()
     expect(screen.getByText('Tree 10')).toBeTruthy()
+  })
+
+  it('renders grouped metadata key options from filterState', () => {
+    const controller = {
+      setSelectedColorBy: jest.fn(),
+      setSearchTerm: jest.fn(),
+      setSearchTags: jest.fn(),
+    }
+    renderWidget({
+      activeTab: 2,
+      filterState: {
+        ...filterState,
+        selectedColorBy: null,
+        coloryby: {
+          sample: 'Sample',
+          name: 'Population',
+          region: 'Region',
+        },
+        metadataOptionGroups: [
+          {
+            source: 'individual',
+            label: 'Individuals',
+            options: [{ key: 'name', label: 'Population' }],
+          },
+          {
+            source: 'population',
+            label: 'Populations',
+            options: [{ key: 'region', label: 'Region' }],
+          },
+        ],
+      },
+      filterController: controller,
+    })
+
+    const select = screen.getByLabelText('Metadata key')
+    expect(select.querySelector('optgroup[label="Individuals"]')).toBeTruthy()
+    expect(select.querySelector('optgroup[label="Populations"]')).toBeTruthy()
+    fireEvent.change(select, { target: { value: 'region' } })
+    expect(controller.setSelectedColorBy).toHaveBeenCalledWith('region')
+  })
+
+  it('falls back to snapshot metadata_schema keys before values are loaded', () => {
+    const controller = {
+      setSelectedColorBy: jest.fn(),
+      setSearchTerm: jest.fn(),
+      setSearchTags: jest.fn(),
+    }
+    renderWidget({
+      activeTab: 2,
+      snapshot: {
+        config: {
+          metadata_schema: {
+            metadata_keys: ['sample', 'name', 'region'],
+            metadata_keys_by_source: {
+              individual: ['name'],
+              node: [],
+              population: ['region'],
+            },
+          },
+        },
+      },
+      filterState: {
+        ...filterState,
+        selectedColorBy: null,
+        coloryby: {},
+        metadataOptionGroups: [],
+        metadataColors: {},
+        enabledValues: [],
+      },
+      filterController: controller,
+    })
+
+    const select = screen.getByLabelText('Metadata key')
+    expect(screen.getByText('Select a metadata key')).toBeTruthy()
+    expect(select.querySelector('optgroup[label="Individuals"]')).toBeTruthy()
+    fireEvent.change(select, { target: { value: 'name' } })
+    expect(controller.setSelectedColorBy).toHaveBeenCalledWith('name')
+  })
+
+  it('shows a loading state while selected metadata values are loading', () => {
+    renderWidget({
+      activeTab: 2,
+      filterState: {
+        ...filterState,
+        selectedColorBy: 'name',
+        metadataColors: {},
+        loadedMetadata: { name: 'loading' },
+        metadataLoading: true,
+        enabledValues: [],
+      },
+    })
+
+    expect(screen.getByText('Loading metadata values...')).toBeTruthy()
   })
 
   it('calls controller actions for search tags and enabled values', () => {

@@ -53,6 +53,17 @@ interface ParsedDetailsState {
   treeIndex?: number
 }
 
+interface MetadataOption {
+  key: string
+  label: string
+}
+
+interface MetadataOptionGroup {
+  source: string
+  label: string
+  options: MetadataOption[]
+}
+
 interface ParsedFilterState {
   tsconfig?: {
     project?: string | null
@@ -63,6 +74,9 @@ interface ParsedFilterState {
   searchTags: string[]
   selectedColorBy: string | null
   coloryby: Record<string, string>
+  metadataOptionGroups: MetadataOptionGroup[]
+  metadataLoading: boolean
+  metadataSchema: Record<string, unknown> | null
   metadataColors: Record<string, Record<string, number[]>>
   loadedMetadata: Record<string, unknown>
   enabledValues: string[]
@@ -95,6 +109,17 @@ interface FilterController {
 }
 
 const ITEMS_PER_PAGE = 100
+const SOURCE_ORDER = ['individual', 'node', 'population']
+const SOURCE_LABELS: Record<string, string> = {
+  individual: 'Individuals',
+  node: 'Nodes',
+  population: 'Populations',
+}
+const SOURCE_LABELS_SINGULAR: Record<string, string> = {
+  individual: 'Individual',
+  node: 'Node',
+  population: 'Population',
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
@@ -142,9 +167,45 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String) : []
 }
 
+function parseMetadataOptionGroups(raw: unknown): MetadataOptionGroup[] {
+  if (!Array.isArray(raw)) {
+    return []
+  }
+  return raw
+    .map(group => {
+      if (!isRecord(group)) {
+        return null
+      }
+      const source = String(group.source ?? '')
+      const label = String(group.label ?? source)
+      const options = Array.isArray(group.options)
+        ? group.options
+            .map(option => {
+              if (!isRecord(option) || option.key == null) {
+                return null
+              }
+              const key = String(option.key)
+              return {
+                key,
+                label: String(option.label ?? key),
+              }
+            })
+            .filter((option): option is MetadataOption => Boolean(option))
+        : []
+      if (!source || options.length === 0) {
+        return null
+      }
+      return { source, label, options }
+    })
+    .filter((group): group is MetadataOptionGroup => Boolean(group))
+}
+
 function parseFilterState(raw: unknown): ParsedFilterState {
   const obj = isRecord(raw) ? raw : {}
   const tsconfig = isRecord(obj.tsconfig) ? obj.tsconfig : {}
+  const metadataSchema = isRecord(obj.metadataSchema)
+    ? obj.metadataSchema
+    : null
   return {
     tsconfig: {
       project: typeof tsconfig.project === 'string' ? tsconfig.project : null,
@@ -164,6 +225,9 @@ function parseFilterState(raw: unknown): ParsedFilterState {
           ]),
         )
       : {},
+    metadataOptionGroups: parseMetadataOptionGroups(obj.metadataOptionGroups),
+    metadataLoading: obj.metadataLoading === true,
+    metadataSchema,
     metadataColors: isRecord(obj.metadataColors)
       ? (obj.metadataColors as Record<string, Record<string, number[]>>)
       : {},
@@ -297,6 +361,96 @@ function getMutationSummary(
 
 function formatLabel(key: string) {
   return key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ')
+}
+
+function formatMetadataKeyLabel(
+  key: string,
+  tsconfig?: ParsedFilterState['tsconfig'],
+) {
+  if (tsconfig?.project === '1000Genomes') {
+    if (key === 'name') {
+      return 'Population'
+    }
+    if (key === 'other_comments' || key === 'description') {
+      return null
+    }
+  }
+  return key.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase())
+}
+
+function getSchemaMetadataKeys(metadataSchema: unknown): string[] {
+  if (
+    !isRecord(metadataSchema) ||
+    !Array.isArray(metadataSchema.metadata_keys)
+  ) {
+    return []
+  }
+  return metadataSchema.metadata_keys.map(String)
+}
+
+function getSchemaMetadataLabels(
+  metadataSchema: unknown,
+  tsconfig?: ParsedFilterState['tsconfig'],
+) {
+  return Object.fromEntries(
+    getSchemaMetadataKeys(metadataSchema)
+      .map(key => [key, formatMetadataKeyLabel(key, tsconfig)] as const)
+      .filter((entry): entry is readonly [string, string] => Boolean(entry[1])),
+  )
+}
+
+function getSchemaMetadataGroups(
+  metadataSchema: unknown,
+  labels: Record<string, string>,
+) {
+  if (
+    !isRecord(metadataSchema) ||
+    !isRecord(metadataSchema.metadata_keys_by_source)
+  ) {
+    return []
+  }
+  const keysBySource = metadataSchema.metadata_keys_by_source
+  const visibleKeys = new Set(Object.keys(labels))
+  const keySources = new Map<string, string[]>()
+  const primarySourceByKey = new Map<string, string>()
+
+  SOURCE_ORDER.forEach(source => {
+    const keys = asStringArray(keysBySource[source])
+    keys.forEach(key => {
+      if (!visibleKeys.has(key)) {
+        return
+      }
+      if (!keySources.has(key)) {
+        keySources.set(key, [])
+      }
+      keySources.get(key)?.push(source)
+      if (!primarySourceByKey.has(key)) {
+        primarySourceByKey.set(key, source)
+      }
+    })
+  })
+
+  return SOURCE_ORDER.map(source => {
+    const options = Array.from(primarySourceByKey.entries())
+      .filter(([, primarySource]) => primarySource === source)
+      .map(([key]) => {
+        const alsoSources = (keySources.get(key) ?? [])
+          .filter(item => item !== source)
+          .map(item => SOURCE_LABELS_SINGULAR[item])
+          .filter(Boolean)
+        return {
+          key,
+          label: alsoSources.length
+            ? `${labels[key]} (also ${alsoSources.join(', ')})`
+            : labels[key],
+        }
+      })
+    return {
+      source,
+      label: SOURCE_LABELS[source],
+      options,
+    }
+  }).filter(group => group.options.length > 0)
 }
 
 function formatPosition(value: unknown) {
@@ -696,15 +850,31 @@ function DetailsContent({
 function FilterContent({
   filterState,
   controller,
+  snapshotMetadataSchema,
 }: {
   filterState: ParsedFilterState
   controller?: FilterController | null
+  snapshotMetadataSchema?: unknown
 }) {
   const { classes } = useStyles()
   const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE)
   const [isTreesExpanded, setIsTreesExpanded] = useState(true)
 
   const selectedColorBy = filterState.selectedColorBy
+  const metadataSchema = filterState.metadataSchema ?? snapshotMetadataSchema
+  const schemaLabels = useMemo(
+    () => getSchemaMetadataLabels(metadataSchema, filterState.tsconfig),
+    [filterState.tsconfig, metadataSchema],
+  )
+  const dropdownLabels =
+    Object.keys(filterState.coloryby).length > 0
+      ? filterState.coloryby
+      : schemaLabels
+  const dropdownGroups =
+    filterState.metadataOptionGroups.length > 0
+      ? filterState.metadataOptionGroups
+      : getSchemaMetadataGroups(metadataSchema, dropdownLabels)
+  const hasDropdownOptions = Object.keys(dropdownLabels).length > 0
   const valueToColor = useMemo(
     () =>
       selectedColorBy && filterState.metadataColors?.[selectedColorBy]
@@ -736,6 +906,15 @@ function FilterContent({
     )
   }, [filterState.tsconfig?.filename, filterState.tsconfig?.project])
   const isCsvFile = Boolean(filterState.tsconfig?.tree_info)
+  const selectedLoadStatus = selectedColorBy
+    ? filterState.loadedMetadata[selectedColorBy]
+    : null
+  const isMetadataValueLoading = Boolean(
+    selectedColorBy &&
+      (selectedLoadStatus === 'loading' ||
+        (filterState.metadataLoading &&
+          Object.keys(valueToColor).length === 0)),
+  )
 
   return (
     <Box>
@@ -769,20 +948,45 @@ function FilterContent({
             aria-label="Metadata key"
             value={selectedColorBy ?? ''}
             onChange={event => {
+              if (!event.target.value) {
+                return
+              }
               controller?.setSelectedColorBy?.(event.target.value)
               controller?.setSearchTerm?.('')
               controller?.setSearchTags?.([])
               setVisibleCount(ITEMS_PER_PAGE)
             }}
           >
-            {Object.keys(filterState.coloryby).length === 0 ? (
+            {!hasDropdownOptions ? (
               <option value="">No metadata available</option>
+            ) : dropdownGroups.length > 0 ? (
+              <>
+                <option value="">Select metadata</option>
+                {dropdownLabels.sample ? (
+                  <option value="sample">{dropdownLabels.sample}</option>
+                ) : null}
+                {dropdownGroups.map(group => (
+                  <optgroup key={group.source} label={group.label}>
+                    {group.options.map(option => (
+                      <option
+                        key={`${group.source}:${option.key}`}
+                        value={option.key}
+                      >
+                        {option.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </>
             ) : (
-              Object.entries(filterState.coloryby).map(([key, label]) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))
+              <>
+                <option value="">Select metadata</option>
+                {Object.entries(dropdownLabels).map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </>
             )}
           </select>
           <input
@@ -919,7 +1123,10 @@ function FilterContent({
                     <button
                       type="button"
                       className={classes.linkButton}
-                      onClick={() => controller?.addSearchTag?.(value)}
+                      onClick={() => {
+                        controller?.addSearchTag?.(value)
+                        controller?.toggleHighlightedValue?.(value)
+                      }}
                       disabled={!isEnabled}
                     >
                       Search
@@ -951,9 +1158,17 @@ function FilterContent({
                 </Box>
               ) : null}
             </>
+          ) : selectedColorBy && isMetadataValueLoading ? (
+            <Typography sx={{ p: 1 }} color="text.secondary">
+              Loading metadata values...
+            </Typography>
           ) : selectedColorBy ? (
             <Typography sx={{ p: 1 }} color="text.secondary">
               No values found
+            </Typography>
+          ) : hasDropdownOptions ? (
+            <Typography sx={{ p: 1 }} color="text.secondary">
+              Select a metadata key
             </Typography>
           ) : (
             <Typography sx={{ p: 1 }} color="text.secondary">
@@ -1188,6 +1403,7 @@ const LoraxMetadataWidget = observer(function LoraxMetadataWidget({
           <FilterContent
             filterState={filterState}
             controller={model.filterController}
+            snapshotMetadataSchema={config.metadata_schema}
           />
         </div>
       </TabPanel>

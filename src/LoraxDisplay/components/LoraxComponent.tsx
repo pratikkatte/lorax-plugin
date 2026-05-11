@@ -54,7 +54,7 @@ function resolveApiBaseFromConfig(adapterConfig: unknown) {
 }
 
 type LoadFileResult = {
-  config?: {
+  config?: Record<string, unknown> & {
     initial_position?: [number, number]
     project?: string
     sid?: string
@@ -71,17 +71,39 @@ function sanitizeConfigForPersistence(config: LoadFileResult['config']) {
     sid: _sid,
     intervals,
     mutations,
-    metadata_schema,
     ...rest
   } = config as Record<string, unknown>
+  const metadataSchema = (config as Record<string, unknown>).metadata_schema
   return {
     ...rest,
+    metadata_schema: metadataSchema,
     intervals_count: Array.isArray(intervals) ? intervals.length : undefined,
     mutations_count: Array.isArray(mutations) ? mutations.length : undefined,
     metadata_schema_keys:
-      metadata_schema && typeof metadata_schema === 'object'
-        ? Object.keys(metadata_schema as Record<string, unknown>).length
+      metadataSchema && typeof metadataSchema === 'object'
+        ? Object.keys(metadataSchema as Record<string, unknown>).length
         : undefined,
+  }
+}
+
+function configWithoutAutoMetadataSelection(config: LoadFileResult['config']) {
+  if (!config || typeof config !== 'object') {
+    return config
+  }
+  const metadataSchema = config.metadata_schema
+  if (
+    !metadataSchema ||
+    typeof metadataSchema !== 'object' ||
+    Array.isArray(metadataSchema)
+  ) {
+    return config
+  }
+  return {
+    ...config,
+    metadata_schema: {
+      ...(metadataSchema as Record<string, unknown>),
+      metadata_keys: [],
+    },
   }
 }
 
@@ -301,7 +323,7 @@ function LoraxDeckContainer({
       return
     }
     handleConfigUpdate(
-      config,
+      configWithoutAutoMetadataSelection(config),
       config.initial_position ?? null,
       config.project ?? null,
       config.sid ?? null,
@@ -512,6 +534,8 @@ function LoraxMetadataWidgetBridge({
     coloryby = {},
     metadataColors = {},
     setMetadataColors,
+    metadataOptionGroups = [],
+    metadataLoading = false,
     loadedMetadata,
     enabledValues = new Set(),
     setEnabledValues,
@@ -721,6 +745,9 @@ function LoraxMetadataWidgetBridge({
       searchTags,
       selectedColorBy,
       coloryby,
+      metadataOptionGroups,
+      metadataLoading,
+      metadataSchema: loadResult?.config?.metadata_schema ?? null,
       metadataColors: metadataColors || {},
       loadedMetadata: loadedMetadataToObject(loadedMetadata),
       enabledValues: Array.from(enabledValues || []).map(String),
@@ -742,7 +769,10 @@ function LoraxMetadataWidgetBridge({
       highlightedMetadataValue,
       hoveredTreeIndex,
       loadedMetadata,
+      loadResult?.config?.metadata_schema,
+      metadataLoading,
       metadataColors,
+      metadataOptionGroups,
       searchTags,
       searchTerm,
       selectedColorBy,
