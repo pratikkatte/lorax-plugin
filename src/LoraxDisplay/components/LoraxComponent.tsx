@@ -15,6 +15,7 @@ import {
   type SelectionDetail,
 } from '../detailsRequest'
 import { LORAX_METADATA_WIDGET_ID, LoraxDisplayModel } from '../model'
+import { useStableIntervalCoords } from '../useStableIntervalCoords'
 import { computeStrictVisibleRegion } from '../viewport'
 import { metadataFeatureActions } from '../../LoraxMetadataWidget/metadataFeatureActions'
 import type { MetadataFeature } from '../../LoraxMetadataWidget/metadataFeatureConfig'
@@ -1213,7 +1214,7 @@ const LoraxComponent = observer(function LoraxComponent({
     [],
   )
 
-  const intervalCoords = visibleRegion.intervalCoords
+  const intervalCoords = useStableIntervalCoords(visibleRegion.intervalCoords)
 
   useEffect(() => {
     if (!view?.dynamicBlocks?.contentBlocks) return

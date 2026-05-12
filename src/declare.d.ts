@@ -7,11 +7,6 @@ declare module '@lorax/core' {
   export const LoraxDeckGL: any
 
   export function normalizeIntervals(intervals: unknown[] | null): number[]
-  export function queryIntervalsSync(
-    normalizedIntervals: number[],
-    start: number,
-    end: number,
-  ): { visibleIntervals: number[]; lo: number; hi: number }
   export function new_complete_experiment_map(
     localBins: Map<number, unknown>,
     globalBpPerUnit: number,
@@ -29,4 +24,13 @@ declare module '@lorax/core' {
   }
   export function serializeBinsForTransfer(bins: Map<number, unknown>): unknown[]
   export function computeRenderArrays(data: Record<string, unknown>): unknown
+}
+
+declare module '@lorax/core/src/workers/modules/intervalUtils.js' {
+  export function buildIntervalsResponse(
+    normalizedIntervals: number[],
+    start: number,
+    end: number,
+    maxIntervals?: number,
+  ): { visibleIntervals: number[]; lo: number; hi: number; count: number }
 }

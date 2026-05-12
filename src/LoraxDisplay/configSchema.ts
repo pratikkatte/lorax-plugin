@@ -1,5 +1,5 @@
 import { ConfigurationSchema } from '@jbrowse/core/configuration'
-import { baseLinearDisplayConfigSchema } from '@jbrowse/plugin-linear-genome-view'
+import baseLinearDisplayConfigSchema from '@jbrowse/plugin-linear-genome-view/esm/BaseLinearDisplay/models/configSchema'
 
 export default ConfigurationSchema(
   'LoraxDisplay',

@@ -1,11 +1,11 @@
 import RpcMethodType from '@jbrowse/core/pluggableElementTypes/RpcMethodType'
 import {
   normalizeIntervals,
-  queryIntervalsSync,
   new_complete_experiment_map,
   serializeBinsForTransfer,
   computeRenderArrays,
 } from '@lorax/core'
+import { buildIntervalsResponse } from '@lorax/core/src/workers/modules/intervalUtils.js'
 
 type SessionState = {
   tsconfig: Record<string, unknown> | null
@@ -58,20 +58,24 @@ export class LoraxIntervalsRpcMethod extends RpcMethodType {
     const state = getSessionState(sessionId)
     const start = Number(data?.start ?? 0)
     const end = Number(data?.end ?? 0)
-    const { visibleIntervals, lo, hi } = queryIntervalsSync(
+    const maxIntervals = Number(data?.maxIntervals ?? 2000)
+    const { visibleIntervals, lo, hi, count } = buildIntervalsResponse(
       state.normalizedIntervals,
       start,
       end,
+      maxIntervals,
     )
     console.log('[LoraxRPC] intervals', {
       sessionId,
       start,
       end,
+      count,
       visibleCount: visibleIntervals.length,
+      maxIntervals,
       lo,
       hi,
     })
-    return { visibleIntervals, lo, hi }
+    return { visibleIntervals, lo, hi, count }
   }
 }
 

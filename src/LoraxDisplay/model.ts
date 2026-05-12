@@ -4,8 +4,9 @@ import {
   AnyConfigurationSchemaType,
   readConfObject,
 } from '@jbrowse/core/configuration'
+import { BaseDisplay } from '@jbrowse/core/pluggableElementTypes/models'
 import { getContainingTrack, getSession } from '@jbrowse/core/util'
-import { BaseLinearDisplay } from '@jbrowse/plugin-linear-genome-view'
+import TrackHeightMixin from '@jbrowse/plugin-linear-genome-view/esm/BaseLinearDisplay/models/TrackHeightMixin'
 
 import type { MenuItem } from '@jbrowse/core/ui'
 
@@ -68,7 +69,8 @@ export default function stateModelFactory(
 ) {
   const model = types.compose(
     'LoraxDisplay',
-    BaseLinearDisplay,
+    BaseDisplay,
+    TrackHeightMixin(),
     types.model({
       type: types.literal('LoraxDisplay'),
       configuration: ConfigurationReference(configSchema),
@@ -80,11 +82,6 @@ export default function stateModelFactory(
   )
 
   return model
-    .views(() => ({
-      get rendererTypeName() {
-        return 'LoraxRenderer'
-      },
-    }))
     .actions(self => ({
       setMetadataView(value: boolean) {
         self.metadataViewEnabled = value
@@ -152,6 +149,27 @@ export default function stateModelFactory(
         ]
       },
     }))
+    .preProcessSnapshot(snap => {
+      if (!snap || typeof snap !== 'object' || Array.isArray(snap)) {
+        return snap
+      }
+      const snapshot = snap as unknown as Record<string, unknown>
+      const {
+        blockState: _blockState,
+        height,
+        ...rest
+      } = snapshot
+      const next =
+        height === undefined ? rest : { ...rest, heightPreConfig: height }
+      return next as unknown as typeof snap
+    })
+    .postProcessSnapshot(snap => {
+      const { blockState: _blockState, ...rest } = snap as unknown as Record<
+        string,
+        unknown
+      >
+      return rest as unknown as typeof snap
+    })
 }
 
 export type LoraxDisplayStateModel = ReturnType<typeof stateModelFactory>
