@@ -23,6 +23,10 @@ import {
 import { LORAX_METADATA_WIDGET_ID, LoraxDisplayModel } from '../model'
 import { useStableIntervalCoords } from '../useStableIntervalCoords'
 import { computeStrictVisibleRegion } from '../viewport'
+import {
+  numberArraysEqual,
+  useStartupStableIntervalCoords,
+} from '../startupViewport'
 import { metadataFeatureActions } from '../../LoraxMetadataWidget/metadataFeatureActions'
 import type { MetadataFeature } from '../../LoraxMetadataWidget/metadataFeatureConfig'
 import { metadataFeatureConfig } from '../../LoraxMetadataWidget/metadataFeatureConfig'
@@ -144,6 +148,33 @@ type HoverTooltipState = {
   rows: HoverTooltipRow[]
   x: number
   y: number
+}
+
+function tooltipRowsEqual(
+  a: HoverTooltipRow[] | undefined,
+  b: HoverTooltipRow[] | undefined,
+) {
+  if (a === b) return true
+  if (!a || !b || a.length !== b.length) return false
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i].k !== b[i].k || a[i].v !== b[i].v) {
+      return false
+    }
+  }
+  return true
+}
+
+function tooltipStatesEqual(
+  a: HoverTooltipState | null,
+  b: HoverTooltipState,
+) {
+  return Boolean(
+    a &&
+      a.title === b.title &&
+      a.x === b.x &&
+      a.y === b.y &&
+      tooltipRowsEqual(a.rows, b.rows),
+  )
 }
 
 type DetailsState = {
@@ -1029,7 +1060,10 @@ const LoraxComponent = observer(function LoraxComponent({
   >([150, 150, 150, 200])
   const [timeScale, setTimeScale] = useState<'linear' | 'log'>('linear')
 
-  const clearHoverTooltip = useCallback(() => setHoverTooltip(null), [])
+  const clearHoverTooltip = useCallback(
+    () => setHoverTooltip(prev => (prev === null ? prev : null)),
+    [],
+  )
   const metadataWidgetRef = useRef<MetadataWidgetModel | null>(null)
 
   const handleTreeLoadingChange = useCallback((loading: boolean) => {
@@ -1042,6 +1076,13 @@ const LoraxComponent = observer(function LoraxComponent({
       }
       presetLoadResolversRef.current.splice(0).forEach(resolve => resolve())
     }
+  }, [])
+
+  const handleVisibleTreesChange = useCallback((trees?: number[]) => {
+    const nextTrees = Array.isArray(trees) ? trees : []
+    setVisibleTrees(prev =>
+      numberArraysEqual(prev, nextTrees) ? prev : nextTrees,
+    )
   }, [])
 
   const waitForTreeLoad = useCallback(() => {
@@ -1094,7 +1135,14 @@ const LoraxComponent = observer(function LoraxComponent({
         trackContainerRef.current,
       )
       if (!xy) return
-      setHoverTooltip({ ...base, x: xy.x, y: xy.y })
+      const nextTooltip = {
+        ...base,
+        x: Math.round(xy.x),
+        y: Math.round(xy.y),
+      }
+      setHoverTooltip(prev =>
+        tooltipStatesEqual(prev, nextTooltip) ? prev : nextTooltip,
+      )
     },
     [],
   )
@@ -1297,7 +1345,36 @@ const LoraxComponent = observer(function LoraxComponent({
     [],
   )
 
-  const intervalCoords = useStableIntervalCoords(visibleRegion.intervalCoords)
+  const jbrowseIntervalCoords = useStableIntervalCoords(
+    visibleRegion.intervalCoords,
+  )
+  const loadConfig = loadResult?.config
+  const configKey = useMemo(() => {
+    if (!loadConfig) return 'pending'
+    return [
+      loadResult?.loraxSid ?? '',
+      loadConfig.project ?? '',
+      (loadConfig as Record<string, unknown>).filename ?? '',
+      (loadConfig as Record<string, unknown>).genome_length ?? '',
+    ].join('|')
+  }, [loadConfig, loadResult?.loraxSid])
+  const jbrowseViewForCoords = view as unknown as {
+    pxToBp?: unknown
+    width?: unknown
+  }
+  const canUseJBrowseCoords = Boolean(
+    view &&
+      typeof jbrowseViewForCoords.pxToBp === 'function' &&
+      Number.isFinite(Number(jbrowseViewForCoords.width)) &&
+      Number(jbrowseViewForCoords.width) > 0,
+  )
+  const intervalCoords = useStartupStableIntervalCoords({
+    canUseJBrowseCoords,
+    configKey,
+    configLoaded: Boolean(loadConfig),
+    fallbackIntervalCoords: loadConfig?.initial_position,
+    jbrowseIntervalCoords,
+  })
 
   useEffect(() => {
     if (!view?.dynamicBlocks?.contentBlocks) return
@@ -1309,9 +1386,10 @@ const LoraxComponent = observer(function LoraxComponent({
           end: block.end,
         }),
       ),
+      jbrowseIntervalCoords,
       intervalCoords,
     })
-  }, [view?.dynamicBlocks?.contentBlocks, intervalCoords])
+  }, [view?.dynamicBlocks?.contentBlocks, jbrowseIntervalCoords, intervalCoords])
 
   useEffect(() => {
     const element = trackContainerRef.current
@@ -1431,7 +1509,7 @@ const LoraxComponent = observer(function LoraxComponent({
           highlightDescendantsOnHover={highlightDescendantsOnHover}
           descendantsHighlightColor={descendantsHighlightColor}
           onTreeLoadingChange={handleTreeLoadingChange}
-          onVisibleTreesChange={trees => setVisibleTrees(trees ?? [])}
+          onVisibleTreesChange={handleVisibleTreesChange}
           onTipHover={onTipHover}
           onEdgeHover={onEdgeHover}
           onSelectionUpdate={showMetadataWidgetForSelection}
