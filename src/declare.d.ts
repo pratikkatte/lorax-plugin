@@ -5,6 +5,7 @@ declare module '@lorax/core' {
   export const LoraxProvider: any
   export function useLorax(): any
   export const LoraxDeckGL: any
+  export function formatTooltipTime(value: unknown): string
 
   export function normalizeIntervals(intervals: unknown[] | null): number[]
   export function new_complete_experiment_map(

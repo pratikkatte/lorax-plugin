@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import '@luma.gl/webgl'
 import {
   getContainingTrack,
@@ -9,7 +10,12 @@ import {
 import { observer } from 'mobx-react'
 import { readConfObject } from '@jbrowse/core/configuration'
 import { getAdapter } from '@jbrowse/core/data_adapters/dataAdapterCache'
-import { LoraxDeckGL, LoraxProvider, useLorax } from '@lorax/core'
+import {
+  LoraxDeckGL,
+  LoraxProvider,
+  formatTooltipTime,
+  useLorax,
+} from '@lorax/core'
 import {
   buildDetailsRequestForPick,
   type SelectionDetail,
@@ -134,7 +140,6 @@ interface TrackSize {
 
 type HoverTooltipRow = { k: string; v: string | number | null | undefined }
 type HoverTooltipState = {
-  kind: 'tip' | 'edge'
   title: string
   rows: HoverTooltipRow[]
   x: number
@@ -187,27 +192,27 @@ type DeckRef = {
 
 const FILTER_TAB_INDEX = 2
 const PRESET_FEATURE_PARAM = 'presetfeature'
+const HOVER_TOOLTIP_OFFSET_PX = 12
 
-/** Screen coords for `position: fixed` — deck `info.x/y` are canvas-relative, not client. */
-function getClientCoordsForTooltip(
+/** Viewport coords for a tooltip portaled to `document.body`. */
+function getViewportCoordsForTooltip(
   info: DeckPickInfo,
   event: DeckPickEvent,
   trackRoot: HTMLElement | null,
 ): { x: number; y: number } | null {
   const src = event?.srcEvent
-  // if (src && 'clientX' in src && 'clientY' in src) {
-  //   const cx = src.clientX
-  //   const cy = src.clientY
-  //   if (Number.isFinite(cx) && Number.isFinite(cy)) {
-  //     return { x: cx, y: cy }
-  //   }
-  // }
+  const cx = src && 'clientX' in src ? src.clientX : undefined
+  const cy = src && 'clientY' in src ? src.clientY : undefined
+  if (Number.isFinite(cx) && Number.isFinite(cy)) {
+    return { x: cx as number, y: cy as number }
+  }
   const ix = info?.x
   const iy = info?.y
-  if (ix && iy) {
-    return { x: ix, y: iy }
+  if (!(Number.isFinite(ix) && Number.isFinite(iy)) || !trackRoot) {
+    return null
   }
-  return null
+  const r = trackRoot.getBoundingClientRect()
+  return { x: r.left + (ix as number), y: r.top + (iy as number) }
 }
 
 function hexToRgb(hex: string) {
@@ -1067,7 +1072,7 @@ const LoraxComponent = observer(function LoraxComponent({
       info: DeckPickInfo,
       event: DeckPickEvent,
     ) => {
-      const xy = getClientCoordsForTooltip(
+      const xy = getViewportCoordsForTooltip(
         info,
         event,
         trackContainerRef.current,
@@ -1084,14 +1089,20 @@ const LoraxComponent = observer(function LoraxComponent({
         clearHoverTooltip()
         return
       }
-      const t = tip as { tree_idx?: number; node_id?: number }
+      const t = tip as {
+        tree_idx?: number
+        node_id?: number
+        node_time?: number | null
+        name?: string
+      }
       setTooltipFromEvent(
         {
-          kind: 'tip',
           title: 'Tip',
           rows: [
             { k: 'Tree', v: t.tree_idx },
             { k: 'Node ID', v: t.node_id },
+            { k: 'Node time', v: formatTooltipTime(t.node_time) },
+            ...(t.name ? [{ k: 'Name', v: t.name }] : []),
           ],
         },
         info,
@@ -1111,15 +1122,18 @@ const LoraxComponent = observer(function LoraxComponent({
         tree_idx?: number
         parent_id?: number
         child_id?: number
+        parent_time?: number | null
+        child_time?: number | null
       }
       setTooltipFromEvent(
         {
-          kind: 'edge',
           title: 'Edge',
           rows: [
             { k: 'Tree', v: e.tree_idx },
             { k: 'Parent', v: e.parent_id },
+            { k: 'Parent time', v: formatTooltipTime(e.parent_time) },
             { k: 'Child', v: e.child_id },
+            { k: 'Child time', v: formatTooltipTime(e.child_time) },
           ],
         },
         info,
@@ -1434,39 +1448,42 @@ const LoraxComponent = observer(function LoraxComponent({
         setDescendantsHighlightColor={setDescendantsHighlightColor}
       />
       {hoverTooltip &&
-        Number.isFinite(hoverTooltip.x) &&
-        Number.isFinite(hoverTooltip.y) && (
-          <div
-            style={{
-              position: 'fixed',
-              left: hoverTooltip.x + 12,
-              top: hoverTooltip.y + 12,
-              zIndex: 99999,
-              pointerEvents: 'none',
-              backgroundColor: '#fff',
-              boxShadow:
-                '0 4px 20px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.08)',
-              borderRadius: 10,
-              minWidth: 180,
-              maxWidth: 320,
-              border: '1px solid rgba(0,0,0,0.08)',
-              overflow: 'hidden',
-              fontFamily:
-                '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-            }}
-          >
+      Number.isFinite(hoverTooltip.x) &&
+      Number.isFinite(hoverTooltip.y)
+        ? createPortal(
             <div
-              style={{ padding: '10px 12px', fontSize: 13, color: '#374151' }}
+              style={{
+                position: 'fixed',
+                left: hoverTooltip.x + HOVER_TOOLTIP_OFFSET_PX,
+                top: hoverTooltip.y + HOVER_TOOLTIP_OFFSET_PX,
+                zIndex: 99999,
+                pointerEvents: 'none',
+                backgroundColor: '#fff',
+                boxShadow:
+                  '0 4px 20px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.08)',
+                borderRadius: 10,
+                minWidth: 180,
+                maxWidth: 320,
+                border: '1px solid rgba(0,0,0,0.08)',
+                fontFamily:
+                  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+              }}
             >
-              {hoverTooltip.title && (
-                <div
-                  style={{ fontWeight: 700, color: '#111827', marginBottom: 6 }}
-                >
-                  {hoverTooltip.title}
-                </div>
-              )}
-              {Array.isArray(hoverTooltip.rows) &&
-                hoverTooltip.rows.map(row => (
+              <div
+                style={{ padding: '10px 12px', fontSize: 13, color: '#374151' }}
+              >
+                {hoverTooltip.title && (
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      color: '#111827',
+                      marginBottom: 6,
+                    }}
+                  >
+                    {hoverTooltip.title}
+                  </div>
+                )}
+                {hoverTooltip.rows.map(row => (
                   <div
                     key={row.k}
                     style={{
@@ -1492,9 +1509,11 @@ const LoraxComponent = observer(function LoraxComponent({
                     </span>
                   </div>
                 ))}
-            </div>
-          </div>
-        )}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   )
 })

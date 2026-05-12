@@ -4,11 +4,18 @@ import {
   AnyConfigurationSchemaType,
   readConfObject,
 } from '@jbrowse/core/configuration'
+import { createJBrowseTheme, type MenuItem } from '@jbrowse/core/ui'
 import { BaseDisplay } from '@jbrowse/core/pluggableElementTypes/models'
-import { getContainingTrack, getSession } from '@jbrowse/core/util'
-import { TrackHeightMixin } from '@jbrowse/plugin-linear-genome-view'
+import {
+  getContainingTrack,
+  getContainingView,
+  getSession,
+} from '@jbrowse/core/util'
+import {
+  TrackHeightMixin,
+  type ExportSvgDisplayOptions,
+} from '@jbrowse/plugin-linear-genome-view'
 
-import type { MenuItem } from '@jbrowse/core/ui'
 import SettingsIcon from '@mui/icons-material/Settings'
 
 /** Stable drawer widget instance id (see LoraxMetadataWidget). */
@@ -105,6 +112,35 @@ export default function stateModelFactory(
       },
       setLoadResultSnapshot(snapshot: unknown) {
         self.loadResultSnapshot = sanitizeSnapshot(snapshot)
+      },
+      async renderSvg(opts: ExportSvgDisplayOptions) {
+        const view = getContainingView(self)
+        const { width } = view
+        const height = opts.overrideHeight ?? self.height
+        const theme = createJBrowseTheme(opts.theme)
+        const pad = 8
+        const labelY = Math.min(height - pad, pad + 14)
+        return (
+          <g>
+            <rect
+              x={0}
+              y={0}
+              width={width}
+              height={height}
+              fill={theme.palette.background.default}
+              stroke={theme.palette.divider}
+              strokeWidth={1}
+            />
+            <text
+              x={pad}
+              y={labelY}
+              fill={theme.palette.text.secondary}
+              fontSize={12}
+            >
+              Lorax WebGL view is not included in SVG/PNG export.
+            </text>
+          </g>
+        )
       },
     }))
     .views(self => ({
