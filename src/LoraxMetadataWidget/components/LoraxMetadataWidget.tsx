@@ -3,9 +3,6 @@ import React, { useEffect, useMemo, useState, type ReactNode } from 'react'
 import SimpleField from '@jbrowse/core/BaseFeatureWidget/BaseFeatureDetail/SimpleField'
 import { makeStyles } from 'tss-react/mui'
 import {
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
   Box,
   Divider,
   Paper,
@@ -13,7 +10,6 @@ import {
   Tabs,
   Typography,
 } from '@mui/material'
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { observer } from 'mobx-react'
 
 import {
@@ -303,30 +299,6 @@ function formatScalar(value: unknown): string | undefined {
   }
 }
 
-function formatIntervalsSummary(
-  config: Record<string, unknown>,
-): string | undefined {
-  const persistedCount = config.intervals_count
-  if (typeof persistedCount === 'number' && persistedCount > 0) {
-    return `${persistedCount} interval(s)`
-  }
-  const iv = config.intervals
-  if (!Array.isArray(iv) || iv.length === 0) {
-    return undefined
-  }
-  const first = iv[0]
-  const last = iv[iv.length - 1]
-  if (
-    Array.isArray(first) &&
-    first.length >= 2 &&
-    Array.isArray(last) &&
-    last.length >= 2
-  ) {
-    return `${iv.length} window(s); first [${first[0]}, ${first[1]}]`
-  }
-  return `${iv.length} interval(s)`
-}
-
 function getMutationsList(
   config: Record<string, unknown>,
 ): Record<string, unknown>[] {
@@ -347,16 +319,6 @@ function formatMutationRow(m: Record<string, unknown>): string {
   const right = derived != null ? String(derived) : '?'
   const posStr = pos != null ? ` (Pos: ${formatScalar(pos) ?? '?'})` : ''
   return `${left} → ${right}${posStr}`
-}
-
-function getMutationSummary(
-  config: Record<string, unknown>,
-): string | undefined {
-  const count = config.mutations_count
-  if (typeof count === 'number') {
-    return `${count} mutation(s) loaded`
-  }
-  return undefined
 }
 
 function formatLabel(key: string) {
@@ -494,22 +456,6 @@ const useStyles = makeStyles()(theme => ({
     marginTop: theme.spacing(1),
     marginBottom: theme.spacing(0.5),
     letterSpacing: 0.08 * 16,
-  },
-  pre: {
-    marginTop: theme.spacing(1),
-    padding: theme.spacing(2),
-    overflow: 'auto',
-    maxHeight: '55vh',
-    fontFamily: 'monospace',
-    fontSize: theme.typography.body2.fontSize,
-    whiteSpace: 'pre-wrap',
-    wordBreak: 'break-word',
-    color: theme.palette.text.secondary,
-    backgroundColor: theme.palette.action.hover,
-    borderRadius: theme.shape.borderRadius,
-  },
-  accordionDetails: {
-    padding: theme.spacing(1),
   },
   filterBox: {
     border: `1px solid ${theme.palette.divider}`,
@@ -1264,6 +1210,12 @@ function FilterContent({
   )
 }
 
+/** Clamp invalid tab indices (removed Selection / Metadata / legacy index 4). */
+function normalizeStoredActiveTab(activeTab: number): number {
+  const maxTab = 2
+  return activeTab > maxTab ? maxTab : activeTab
+}
+
 function TabPanel(props: {
   children: ReactNode
   value: number
@@ -1290,8 +1242,10 @@ const LoraxMetadataWidget = observer(function LoraxMetadataWidget({
   model: LoraxMetadataWidgetModel
 }) {
   const { classes } = useStyles()
-  const [tab, setTab] = useState(
-    typeof model.activeTab === 'number' ? model.activeTab : 0,
+  const [tab, setTab] = useState(() =>
+    typeof model.activeTab === 'number'
+      ? normalizeStoredActiveTab(model.activeTab)
+      : 0,
   )
   const parsed = parseSnapshot(model.snapshot)
   const selectedDetail = parseSelectedDetail(model.selectedDetail)
@@ -1299,24 +1253,20 @@ const LoraxMetadataWidget = observer(function LoraxMetadataWidget({
   const filterState = parseFilterState(model.filterState)
 
   useEffect(() => {
-    if (typeof model.activeTab === 'number' && model.activeTab !== tab) {
-      setTab(model.activeTab)
+    if (typeof model.activeTab !== 'number') {
+      return
     }
-  }, [model.activeTab, tab])
+    const maxTab = 2
+    const next = normalizeStoredActiveTab(model.activeTab)
+    if (model.activeTab > maxTab) {
+      model.setActiveTab?.(maxTab)
+    }
+    setTab(next)
+  }, [model, model.activeTab])
 
   const { config = {} } = parsed ?? {}
 
-  const genomeLen = formatScalar(config.genome_length)
-  const project = formatScalar(config.project)
-  const initialPos = formatScalar(config.initial_position)
-  const intervalsSummary = formatIntervalsSummary(config)
   const mutations = getMutationsList(config)
-  const mutationSummary = getMutationSummary(config)
-  const metadataSchema = config.metadata_schema
-  const metadataSchemaKeys =
-    typeof config.metadata_schema_keys === 'number'
-      ? `${config.metadata_schema_keys} key(s)`
-      : undefined
 
   return (
     <Paper className={classes.paper} data-testid="lorax-metadata-widget">
@@ -1345,16 +1295,6 @@ const LoraxMetadataWidget = observer(function LoraxMetadataWidget({
           label="Filter"
           id="lorax-metadata-tab-2"
           aria-controls="lorax-metadata-tabpanel-2"
-        />
-        <Tab
-          label="Metadata"
-          id="lorax-metadata-tab-3"
-          aria-controls="lorax-metadata-tabpanel-3"
-        />
-        <Tab
-          label="Selection"
-          id="lorax-metadata-tab-4"
-          aria-controls="lorax-metadata-tabpanel-4"
         />
       </Tabs>
 
@@ -1405,139 +1345,6 @@ const LoraxMetadataWidget = observer(function LoraxMetadataWidget({
             controller={model.filterController}
             snapshotMetadataSchema={config.metadata_schema}
           />
-        </div>
-      </TabPanel>
-
-      <TabPanel value={tab} index={3}>
-        <div className={classes.tabPanel}>
-          {[
-            project,
-            genomeLen,
-            initialPos,
-            intervalsSummary,
-            mutationSummary,
-            metadataSchemaKeys,
-          ].some(Boolean) ? (
-            <Box sx={{ mb: 2 }}>
-              <Typography
-                variant="overline"
-                component="h2"
-                className={classes.sectionHeader}
-              >
-                Tree / load details
-              </Typography>
-              <Divider sx={{ mb: 1 }} />
-              {project ? <SimpleField name="Project" value={project} /> : null}
-              {genomeLen ? (
-                <SimpleField name="Genome length" value={genomeLen} />
-              ) : null}
-              {initialPos ? (
-                <SimpleField name="Initial position" value={initialPos} />
-              ) : null}
-              {intervalsSummary ? (
-                <SimpleField name="Intervals" value={intervalsSummary} />
-              ) : null}
-              {mutationSummary ? (
-                <SimpleField name="Mutations" value={mutationSummary} />
-              ) : null}
-              {metadataSchemaKeys ? (
-                <SimpleField
-                  name="Metadata schema keys"
-                  value={metadataSchemaKeys}
-                />
-              ) : null}
-            </Box>
-          ) : null}
-          {metadataSchema !== undefined && metadataSchema !== null ? (
-            <>
-              <Typography
-                variant="overline"
-                component="h2"
-                className={classes.sectionHeader}
-              >
-                Metadata schema
-              </Typography>
-              <Divider sx={{ mb: 1 }} />
-              <Box
-                className={classes.pre}
-                component="pre"
-                aria-label="Metadata schema JSON"
-              >
-                {JSON.stringify(metadataSchema, null, 2)}
-              </Box>
-            </>
-          ) : (
-            <Typography color="text.secondary" sx={{ mb: 1 }}>
-              No metadata_schema field in this load payload.
-            </Typography>
-          )}
-          <Accordion defaultExpanded={metadataSchema == null} sx={{ mt: 1 }}>
-            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-              <Typography variant="button">Full snapshot</Typography>
-            </AccordionSummary>
-            <AccordionDetails className={classes.accordionDetails}>
-              <Box
-                className={classes.pre}
-                component="pre"
-                aria-label="Full Lorax load snapshot"
-              >
-                {JSON.stringify(parsed ?? {}, null, 2)}
-              </Box>
-            </AccordionDetails>
-          </Accordion>
-        </div>
-      </TabPanel>
-      <TabPanel value={tab} index={4}>
-        <div className={classes.tabPanel}>
-          {!selectedDetail ? (
-            <Typography color="text.secondary">
-              No selected tip/edge yet. Click a tip or edge in the Lorax view.
-            </Typography>
-          ) : (
-            <>
-              <Typography
-                variant="overline"
-                component="h2"
-                className={classes.sectionHeader}
-              >
-                {selectedDetail.title ?? 'Selected item'}
-              </Typography>
-              <Divider sx={{ mb: 1 }} />
-              {Array.isArray(selectedDetail.rows) ? (
-                selectedDetail.rows.map((row, i) => (
-                  <SimpleField
-                    key={`${row.k ?? 'row'}-${i}`}
-                    name={String(row.k ?? `Field ${i + 1}`)}
-                    value={formatScalar(row.v) ?? '—'}
-                  />
-                ))
-              ) : (
-                <Typography color="text.secondary" sx={{ mb: 1 }}>
-                  No structured fields available for this selection.
-                </Typography>
-              )}
-              <Accordion defaultExpanded={false} sx={{ mt: 2 }}>
-                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                  <Typography variant="button">
-                    Selected payload (JSON)
-                  </Typography>
-                </AccordionSummary>
-                <AccordionDetails className={classes.accordionDetails}>
-                  <Box
-                    className={classes.pre}
-                    component="pre"
-                    aria-label="Selected Lorax payload JSON"
-                  >
-                    {JSON.stringify(
-                      selectedDetail.raw ?? selectedDetail,
-                      null,
-                      2,
-                    )}
-                  </Box>
-                </AccordionDetails>
-              </Accordion>
-            </>
-          )}
         </div>
       </TabPanel>
     </Paper>

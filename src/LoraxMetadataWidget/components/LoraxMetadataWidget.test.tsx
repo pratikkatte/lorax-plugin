@@ -9,9 +9,7 @@ interface MockProps {
 jest.mock('tss-react/mui', () => ({
   makeStyles: () => () => () => ({
     classes: {
-      accordionDetails: 'accordionDetails',
       paper: 'paper',
-      pre: 'pre',
       sectionHeader: 'sectionHeader',
       tabPanel: 'tabPanel',
       trackTitle: 'trackTitle',
@@ -26,12 +24,6 @@ jest.mock('tss-react/mui', () => ({
   }),
 }))
 
-jest.mock('@mui/icons-material/ExpandMore', () => {
-  return function MockExpandMoreIcon() {
-    return null
-  }
-})
-
 jest.mock('@mui/material', () => {
   const ReactMock = jest.requireActual<typeof ReactNamespace>('react')
   const passthrough = (tag: 'div' | 'pre') => {
@@ -41,9 +33,6 @@ jest.mock('@mui/material', () => {
   }
 
   return {
-    Accordion: passthrough('div'),
-    AccordionDetails: passthrough('div'),
-    AccordionSummary: passthrough('div'),
     Box: passthrough('div'),
     Divider: passthrough('div'),
     Paper: passthrough('div'),
