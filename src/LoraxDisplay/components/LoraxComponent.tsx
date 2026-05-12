@@ -22,6 +22,7 @@ import type { MetadataFeature } from '../../LoraxMetadataWidget/metadataFeatureC
 import { metadataFeatureConfig } from '../../LoraxMetadataWidget/metadataFeatureConfig'
 import type { LinearGenomeViewModel } from '@jbrowse/plugin-linear-genome-view'
 import FileInfoDialog from './FileInfoDialog'
+import LoraxSettingsDialog from './LoraxSettingsDialog'
 
 function hasLoadFile(
   adapter: unknown,
@@ -280,6 +281,16 @@ function LoraxDeckContainer({
   hoveredTreeIndex,
   highlightedMutationNode,
   highlightedMutationTreeIndex,
+  polygonFillColor,
+  timeScale,
+  edgeColor,
+  defaultTipColor,
+  compareInsertionColor,
+  compareDeletionColor,
+  showCompareInsertion,
+  showCompareDeletion,
+  highlightDescendantsOnHover,
+  descendantsHighlightColor,
   onTipHover,
   onEdgeHover,
   onTreeLoadingChange,
@@ -298,6 +309,16 @@ function LoraxDeckContainer({
   hoveredTreeIndex: number | null
   highlightedMutationNode: string | null
   highlightedMutationTreeIndex: string | number | null
+  polygonFillColor: [number, number, number, number]
+  timeScale: 'linear' | 'log'
+  edgeColor: [number, number, number, number]
+  defaultTipColor: [number, number, number, number]
+  compareInsertionColor: [number, number, number, number]
+  compareDeletionColor: [number, number, number, number]
+  showCompareInsertion: boolean
+  showCompareDeletion: boolean
+  highlightDescendantsOnHover: boolean
+  descendantsHighlightColor: [number, number, number, number]
   onTipHover: (tip: unknown, info: DeckPickInfo, event: DeckPickEvent) => void
   onEdgeHover: (edge: unknown, info: DeckPickInfo, event: DeckPickEvent) => void
   onTreeLoadingChange: (loading: boolean) => void
@@ -436,7 +457,16 @@ function LoraxDeckContainer({
         highlightedMutationTreeIndex={highlightedMutationTreeIndex}
         onTreeLoadingChange={onTreeLoadingChange}
         onVisibleTreesChange={onVisibleTreesChange}
-        polygonOptions={{ treeColors }}
+        polygonOptions={{ treeColors, fillColor: polygonFillColor }}
+        timeScale={timeScale}
+        edgeColor={edgeColor}
+        defaultTipColor={defaultTipColor}
+        compareInsertionColor={compareInsertionColor}
+        compareDeletionColor={compareDeletionColor}
+        showCompareInsertion={showCompareInsertion}
+        showCompareDeletion={showCompareDeletion}
+        highlightDescendantsOnHover={highlightDescendantsOnHover}
+        descendantsHighlightColor={descendantsHighlightColor}
         onTipHover={onTipHover}
         onTipClick={onTipClick}
         onEdgeHover={onEdgeHover}
@@ -947,13 +977,36 @@ const LoraxComponent = observer(function LoraxComponent({
   const [hoveredTreeIndex, setHoveredTreeIndex] = useState<number | null>(null)
   const [treeIsLoading, setTreeIsLoading] = useState(false)
   const treeIsLoadingRef = useRef(false)
-  const presetLoadResolversRef = useRef<Array<() => void>>([])
+  const presetLoadResolversRef = useRef<(() => void)[]>([])
   const presetLoadTimeoutRef = useRef<number | null>(null)
   const [highlightedMutationNode, setHighlightedMutationNode] = useState<
     string | null
   >(null)
   const [highlightedMutationTreeIndex, setHighlightedMutationTreeIndex] =
     useState<string | number | null>(null)
+  const [polygonFillColor, setPolygonFillColor] = useState<
+    [number, number, number, number]
+  >([145, 194, 244, 46])
+  const [compareInsertionColor, setCompareInsertionColor] = useState<
+    [number, number, number, number]
+  >([0, 255, 0, 200])
+  const [compareDeletionColor, setCompareDeletionColor] = useState<
+    [number, number, number, number]
+  >([255, 0, 0, 200])
+  const [showCompareInsertion, setShowCompareInsertion] = useState(true)
+  const [showCompareDeletion, setShowCompareDeletion] = useState(true)
+  const [highlightDescendantsOnHover, setHighlightDescendantsOnHover] =
+    useState(false)
+  const [descendantsHighlightColor, setDescendantsHighlightColor] = useState<
+    [number, number, number, number]
+  >([56, 189, 248, 255])
+  const [edgeColor, setEdgeColor] = useState<[number, number, number, number]>([
+    100, 100, 100, 255,
+  ])
+  const [defaultTipColor, setDefaultTipColor] = useState<
+    [number, number, number, number]
+  >([150, 150, 150, 200])
+  const [timeScale, setTimeScale] = useState<'linear' | 'log'>('linear')
 
   const clearHoverTooltip = useCallback(() => setHoverTooltip(null), [])
   const metadataWidgetRef = useRef<MetadataWidgetModel | null>(null)
@@ -1334,6 +1387,16 @@ const LoraxComponent = observer(function LoraxComponent({
           hoveredTreeIndex={hoveredTreeIndex}
           highlightedMutationNode={highlightedMutationNode}
           highlightedMutationTreeIndex={highlightedMutationTreeIndex}
+          polygonFillColor={polygonFillColor}
+          timeScale={timeScale}
+          edgeColor={edgeColor}
+          defaultTipColor={defaultTipColor}
+          compareInsertionColor={compareInsertionColor}
+          compareDeletionColor={compareDeletionColor}
+          showCompareInsertion={showCompareInsertion}
+          showCompareDeletion={showCompareDeletion}
+          highlightDescendantsOnHover={highlightDescendantsOnHover}
+          descendantsHighlightColor={descendantsHighlightColor}
           onTreeLoadingChange={handleTreeLoadingChange}
           onVisibleTreesChange={trees => setVisibleTrees(trees ?? [])}
           onTipHover={onTipHover}
@@ -1345,6 +1408,30 @@ const LoraxComponent = observer(function LoraxComponent({
         open={model.fileInfoDialogOpen}
         onClose={() => model.closeFileInfoDialog()}
         snapshot={model.loadResultSnapshot}
+      />
+      <LoraxSettingsDialog
+        open={model.settingsDialogOpen}
+        onClose={() => model.closeSettingsDialog()}
+        polygonFillColor={polygonFillColor}
+        setPolygonFillColor={setPolygonFillColor}
+        timeScale={timeScale}
+        setTimeScale={setTimeScale}
+        edgeColor={edgeColor}
+        setEdgeColor={setEdgeColor}
+        defaultTipColor={defaultTipColor}
+        setDefaultTipColor={setDefaultTipColor}
+        showCompareInsertion={showCompareInsertion}
+        setShowCompareInsertion={setShowCompareInsertion}
+        compareInsertionColor={compareInsertionColor}
+        setCompareInsertionColor={setCompareInsertionColor}
+        showCompareDeletion={showCompareDeletion}
+        setShowCompareDeletion={setShowCompareDeletion}
+        compareDeletionColor={compareDeletionColor}
+        setCompareDeletionColor={setCompareDeletionColor}
+        highlightDescendantsOnHover={highlightDescendantsOnHover}
+        setHighlightDescendantsOnHover={setHighlightDescendantsOnHover}
+        descendantsHighlightColor={descendantsHighlightColor}
+        setDescendantsHighlightColor={setDescendantsHighlightColor}
       />
       {hoverTooltip &&
         Number.isFinite(hoverTooltip.x) &&

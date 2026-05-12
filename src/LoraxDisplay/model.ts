@@ -9,6 +9,7 @@ import { getContainingTrack, getSession } from '@jbrowse/core/util'
 import TrackHeightMixin from '@jbrowse/plugin-linear-genome-view/esm/BaseLinearDisplay/models/TrackHeightMixin'
 
 import type { MenuItem } from '@jbrowse/core/ui'
+import SettingsIcon from '@mui/icons-material/Settings'
 
 /** Stable drawer widget instance id (see LoraxMetadataWidget). */
 export const LORAX_METADATA_WIDGET_ID = 'loraxMetadata'
@@ -75,6 +76,7 @@ export default function stateModelFactory(
       type: types.literal('LoraxDisplay'),
       configuration: ConfigurationReference(configSchema),
       fileInfoDialogOpen: types.optional(types.boolean, false),
+      settingsDialogOpen: types.optional(types.boolean, false),
       metadataViewEnabled: types.optional(types.boolean, false),
       /** Serializable snapshot of last load_file result for the metadata drawer. */
       loadResultSnapshot: types.optional(types.frozen(), null),
@@ -94,6 +96,12 @@ export default function stateModelFactory(
       },
       closeFileInfoDialog() {
         self.fileInfoDialogOpen = false
+      },
+      openSettingsDialog() {
+        self.settingsDialogOpen = true
+      },
+      closeSettingsDialog() {
+        self.settingsDialogOpen = false
       },
       setLoadResultSnapshot(snapshot: unknown) {
         self.loadResultSnapshot = sanitizeSnapshot(snapshot)
@@ -146,6 +154,14 @@ export default function stateModelFactory(
               }
             },
           },
+          { type: 'divider' },
+          {
+            label: 'Settings',
+            icon: SettingsIcon,
+            onClick: () => {
+              self.openSettingsDialog()
+            },
+          },
         ]
       },
     }))
@@ -154,11 +170,7 @@ export default function stateModelFactory(
         return snap
       }
       const snapshot = snap as unknown as Record<string, unknown>
-      const {
-        blockState: _blockState,
-        height,
-        ...rest
-      } = snapshot
+      const { blockState: _blockState, height, ...rest } = snapshot
       const next =
         height === undefined ? rest : { ...rest, heightPreConfig: height }
       return next as unknown as typeof snap
