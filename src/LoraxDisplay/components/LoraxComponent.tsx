@@ -273,6 +273,22 @@ function loadedMetadataToObject(value: unknown): Record<string, unknown> {
   return {}
 }
 
+/** Syncs MST track-menu "Compare topologies" to Lorax context (LoraxDeckGL reads compareMode from useLorax). */
+function CompareTopologiesSync({
+  compareTopologiesEnabled,
+}: {
+  compareTopologiesEnabled: boolean
+}) {
+  const { setCompareMode } = useLorax()
+  useEffect(() => {
+    setCompareMode?.(compareTopologiesEnabled)
+    return () => {
+      setCompareMode?.(false)
+    }
+  }, [compareTopologiesEnabled, setCompareMode])
+  return null
+}
+
 function LoraxDeckContainer({
   deckRef,
   loadResult,
@@ -1369,6 +1385,9 @@ const LoraxComponent = observer(function LoraxComponent({
         disableInlineWorkers
         sessionOverride={loadResult?.loraxSid}
       >
+        <CompareTopologiesSync
+          compareTopologiesEnabled={model.compareTopologiesEnabled}
+        />
         <LoraxMetadataWidgetBridge
           session={session}
           model={model}
