@@ -16,6 +16,7 @@ import {
   type ExportSvgDisplayOptions,
 } from '@jbrowse/plugin-linear-genome-view'
 
+import React from 'react'
 import SettingsIcon from '@mui/icons-material/Settings'
 
 /** Stable drawer widget instance id (see LoraxMetadataWidget). */
@@ -85,6 +86,7 @@ export default function stateModelFactory(
       fileInfoDialogOpen: types.optional(types.boolean, false),
       settingsDialogOpen: types.optional(types.boolean, false),
       metadataViewEnabled: types.optional(types.boolean, false),
+      compareTopologiesEnabled: types.optional(types.boolean, false),
       /** Serializable snapshot of last load_file result for the metadata drawer. */
       loadResultSnapshot: types.optional(types.frozen(), null),
     }),
@@ -94,6 +96,9 @@ export default function stateModelFactory(
     .actions(self => ({
       setMetadataView(value: boolean) {
         self.metadataViewEnabled = value
+      },
+      setCompareTopologiesEnabled(value: boolean) {
+        self.compareTopologiesEnabled = value
       },
       setFileInfoDialogOpen(value: boolean) {
         self.fileInfoDialogOpen = value
@@ -113,14 +118,14 @@ export default function stateModelFactory(
       setLoadResultSnapshot(snapshot: unknown) {
         self.loadResultSnapshot = sanitizeSnapshot(snapshot)
       },
-      async renderSvg(opts: ExportSvgDisplayOptions) {
+      renderSvg(opts: ExportSvgDisplayOptions): Promise<JSX.Element> {
         const view = getContainingView(self)
         const { width } = view
         const height = opts.overrideHeight ?? self.height
         const theme = createJBrowseTheme(opts.theme)
         const pad = 8
         const labelY = Math.min(height - pad, pad + 14)
-        return (
+        return Promise.resolve(
           <g>
             <rect
               x={0}
@@ -139,7 +144,7 @@ export default function stateModelFactory(
             >
               Lorax WebGL view is not included in SVG/PNG export.
             </text>
-          </g>
+          </g>,
         )
       },
     }))
@@ -150,6 +155,14 @@ export default function stateModelFactory(
             label: 'File Info',
             onClick: () => {
               self.openFileInfoDialog()
+            },
+          },
+          {
+            type: 'checkbox',
+            label: 'Compare topologies',
+            checked: self.compareTopologiesEnabled,
+            onClick: () => {
+              self.setCompareTopologiesEnabled(!self.compareTopologiesEnabled)
             },
           },
           {
