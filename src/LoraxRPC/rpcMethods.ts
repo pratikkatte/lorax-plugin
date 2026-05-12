@@ -122,6 +122,8 @@ export class LoraxLocalDataRpcMethod extends RpcMethodType {
         localBins.set(globalIndex, {
           s,
           e,
+          visible_s: Math.max(s, start),
+          visible_e: Math.min(e, end),
           path: null,
           global_index: globalIndex,
           precision: null,
@@ -134,6 +136,8 @@ export class LoraxLocalDataRpcMethod extends RpcMethodType {
         localBins.set(i, {
           s,
           e,
+          visible_s: Math.max(s, start),
+          visible_e: Math.min(e, end),
           span: e - s,
           midpoint: (s + e) / 2,
           path: null,

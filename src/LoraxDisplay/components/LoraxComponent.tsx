@@ -15,6 +15,7 @@ import {
   type SelectionDetail,
 } from '../detailsRequest'
 import { LORAX_METADATA_WIDGET_ID, LoraxDisplayModel } from '../model'
+import { computeStrictVisibleRegion } from '../viewport'
 import { metadataFeatureActions } from '../../LoraxMetadataWidget/metadataFeatureActions'
 import type { MetadataFeature } from '../../LoraxMetadataWidget/metadataFeatureConfig'
 import { metadataFeatureConfig } from '../../LoraxMetadataWidget/metadataFeatureConfig'
@@ -122,14 +123,6 @@ function serializeLoadSnapshotForDrawer(
   } catch {
     return null
   }
-}
-
-type OffsetPercent = {
-  leftOffsetPercent: number
-  rightOffsetPercent: number
-  isOffFlowLeft: boolean
-  isOffFlowRight: boolean
-  isOffFlow: boolean
 }
 
 interface TrackSize {
@@ -280,7 +273,7 @@ function LoraxDeckContainer({
   width,
   viewConfig,
   intervalCoords,
-  offsetPercent,
+  placement,
   treeColors,
   colorByTree,
   hoveredTreeIndex,
@@ -298,7 +291,7 @@ function LoraxDeckContainer({
   width: number
   viewConfig: Record<string, any>
   intervalCoords: [number, number] | null
-  offsetPercent: OffsetPercent
+  placement: { leftPx: number; widthPx: number }
   treeColors: Record<string, string>
   colorByTree: boolean
   hoveredTreeIndex: number | null
@@ -419,13 +412,12 @@ function LoraxDeckContainer({
       style={{
         boxSizing: 'border-box',
         height,
-        maxWidth: '100%',
         minWidth: 0,
         overflow: 'hidden',
-        width: width > 0 ? width : '100%',
-        left: `${offsetPercent.leftOffsetPercent}%`,
-        marginRight: `${offsetPercent.rightOffsetPercent}%`,
-        position: 'relative',
+        width: placement.widthPx > 0 ? placement.widthPx : width,
+        left: placement.leftPx,
+        position: 'absolute',
+        top: 0,
       }}
     >
       <LoraxDeckGL
@@ -1126,65 +1118,13 @@ const LoraxComponent = observer(function LoraxComponent({
     [session, loadResult, model],
   )
 
-  const { offsetPx, width } = view as unknown as {
-    offsetPx: number
-    width: number
-  }
-
-  const bpToPx = useMemo(() => {
-    const blocks = view?.dynamicBlocks?.contentBlocks
-    return view?.bpToPx?.({
-      refName: blocks?.[0]?.refName ?? '',
-      coord: blocks?.[0]?.start ?? 0,
-    })
-  }, [view, offsetPx, width])
-
-  const lastbpToPx = useMemo(() => {
-    const blocks = view?.dynamicBlocks?.contentBlocks
-    return view?.bpToPx?.({
-      refName: blocks?.[blocks.length - 1]?.refName ?? '',
-      coord: blocks?.[blocks.length - 1]?.end ?? 0,
-    })
-  }, [view, offsetPx, width])
-
-  const offsetPercent = useMemo(() => {
-    const bpToPxOffset = bpToPx?.offsetPx
-    const lastbpToPxOffset = lastbpToPx?.offsetPx
-    const screenPosLeft = bpToPxOffset ? bpToPxOffset - offsetPx : 0
-    const screenPosRight = lastbpToPxOffset ? lastbpToPxOffset - offsetPx : 0
-
-    let leftOffsetPercent = 0
-    let rightOffsetPercent = 0
-    let isOffFlowLeft = false
-    let isOffFlowRight = false
-
-    if (
-      typeof offsetPx === 'number' &&
-      typeof width === 'number' &&
-      width > 0
-    ) {
-      isOffFlowLeft = screenPosLeft < 0
-      isOffFlowRight = screenPosRight > 0
-
-      if (offsetPx < 0) {
-        leftOffsetPercent = (Math.abs(offsetPx) / width) * 100
-      }
-      if (isOffFlowRight) {
-        const overflowPx = width - screenPosRight
-        rightOffsetPercent = (overflowPx / width) * 100
-      }
-    }
-
-    const isOffFlow = isOffFlowLeft || isOffFlowRight
-
-    return {
-      leftOffsetPercent,
-      rightOffsetPercent,
-      isOffFlowLeft,
-      isOffFlowRight,
-      isOffFlow,
-    }
-  }, [offsetPx, width, bpToPx, lastbpToPx])
+  const visibleRegion = useMemo(
+    () =>
+      computeStrictVisibleRegion(
+        view as unknown as Parameters<typeof computeStrictVisibleRegion>[0],
+      ),
+    [view, view?.offsetPx, view?.width, view?.dynamicBlocks?.contentBlocks],
+  )
 
   useEffect(() => {
     if (!adapterConfig) {
@@ -1273,26 +1213,7 @@ const LoraxComponent = observer(function LoraxComponent({
     [],
   )
 
-  const intervalCoords = useMemo(() => {
-    const blocks = view?.dynamicBlocks?.contentBlocks
-    if (!blocks || blocks.length === 0) return null
-    let minStart = Infinity
-    let maxEnd = -Infinity
-    for (const block of blocks) {
-      const start = Math.floor(block.start ?? 0)
-      const end = Math.ceil(block.end ?? 0)
-      if (start < minStart) minStart = start
-      if (end > maxEnd) maxEnd = end
-    }
-    if (
-      !Number.isFinite(minStart) ||
-      !Number.isFinite(maxEnd) ||
-      minStart >= maxEnd
-    ) {
-      return null
-    }
-    return [minStart, maxEnd] as [number, number]
-  }, [view?.dynamicBlocks?.contentBlocks])
+  const intervalCoords = visibleRegion.intervalCoords
 
   useEffect(() => {
     if (!view?.dynamicBlocks?.contentBlocks) return
@@ -1406,7 +1327,7 @@ const LoraxComponent = observer(function LoraxComponent({
           width={trackSize.width}
           viewConfig={viewConfig}
           intervalCoords={intervalCoords}
-          offsetPercent={offsetPercent}
+          placement={visibleRegion.placement}
           treeColors={treeColors}
           colorByTree={colorByTree}
           hoveredTreeIndex={hoveredTreeIndex}
