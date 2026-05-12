@@ -3,14 +3,21 @@ import {
   normalizeIntervals,
   new_complete_experiment_map,
   serializeBinsForTransfer,
-  computeRenderArrays,
+  createRenderDataCache,
 } from '@lorax/core'
 import { buildIntervalsResponse } from '@lorax/core/src/workers/modules/intervalUtils.js'
+
+type RenderCache = {
+  computeRenderArrays(data: unknown): unknown
+  applyTransform(data: unknown): unknown
+  clearBuffers(): void
+}
 
 type SessionState = {
   tsconfig: Record<string, unknown> | null
   normalizedIntervals: number[]
   prevLocalBins: Map<number, unknown> | null
+  renderCache: RenderCache
 }
 
 const sessionState = new Map<string, SessionState>()
@@ -21,6 +28,7 @@ function getSessionState(sessionId: string): SessionState {
       tsconfig: null,
       normalizedIntervals: [],
       prevLocalBins: null,
+      renderCache: createRenderDataCache(),
     })
   }
   return sessionState.get(sessionId)!
@@ -46,6 +54,7 @@ export class LoraxConfigRpcMethod extends RpcMethodType {
     const intervals = data?.intervals ?? []
     state.normalizedIntervals = normalizeIntervals(intervals)
     state.prevLocalBins = null
+    state.renderCache.clearBuffers()
     return { ok: true }
   }
 }
@@ -187,33 +196,40 @@ export class LoraxComputeRenderDataRpcMethod extends RpcMethodType {
   name = 'LoraxComputeRenderData'
 
   async execute(args: RpcArgs) {
-    const { data } = args
+    const { sessionId, data } = args
+    const state = getSessionState(sessionId)
     console.log('[LoraxRPC] compute-render-data', {
+      sessionId,
       nodeCount: data?.node_id?.length ?? 0,
       treeCount: data?.displayArray?.length ?? 0,
     })
-    return computeRenderArrays(data || {})
+    return state.renderCache.computeRenderArrays(data || {})
   }
 }
 
 export class LoraxClearRenderBuffersRpcMethod extends RpcMethodType {
   name = 'LoraxClearRenderBuffers'
 
-  async execute(_args: RpcArgs) {
+  async execute(args: RpcArgs) {
+    const { sessionId } = args
+    const state = getSessionState(sessionId)
+    state.renderCache.clearBuffers()
     return { ok: true }
   }
 }
 
 /**
  * Main-branch `useRenderData` opportunistically calls `apply-transform` when
- * only modelMatrices changed, falling back to `compute-render-data` on
- * `{ cacheMiss: true }`. This plugin does not port the stateful buffer cache,
- * so always report a cache miss to force a full recompute.
+ * only modelMatrices changed, falling back to `compute-render-data` on a
+ * cache miss. Keep a per-RPC-session render cache so independent JBrowse
+ * sessions cannot reuse each other's structure buffers.
  */
 export class LoraxApplyTransformRpcMethod extends RpcMethodType {
   name = 'LoraxApplyTransform'
 
-  async execute(_args: RpcArgs) {
-    return { cacheMiss: true }
+  async execute(args: RpcArgs) {
+    const { sessionId, data } = args
+    const state = getSessionState(sessionId)
+    return state.renderCache.applyTransform(data || {})
   }
 }

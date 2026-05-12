@@ -24,6 +24,11 @@ declare module '@lorax/core' {
   }
   export function serializeBinsForTransfer(bins: Map<number, unknown>): unknown[]
   export function computeRenderArrays(data: Record<string, unknown>): unknown
+  export function createRenderDataCache(): {
+    computeRenderArrays(data: unknown): unknown
+    applyTransform(data: unknown): unknown
+    clearBuffers(): void
+  }
 }
 
 declare module '@lorax/core/src/workers/modules/intervalUtils.js' {

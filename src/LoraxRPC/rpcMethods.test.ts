@@ -40,6 +40,28 @@ const mockBuildIntervalsResponse = jest.fn(
   },
 )
 
+const mockRenderCaches: Array<{
+  computeRenderArrays: jest.Mock
+  applyTransform: jest.Mock
+  clearBuffers: jest.Mock
+}> = []
+
+const mockCreateRenderDataCache = jest.fn(() => {
+  const cache = {
+    computeRenderArrays: jest.fn((data: unknown) => ({
+      kind: 'compute-render-data',
+      data,
+    })),
+    applyTransform: jest.fn((data: unknown) => ({
+      kind: 'apply-transform',
+      data,
+    })),
+    clearBuffers: jest.fn(),
+  }
+  mockRenderCaches.push(cache)
+  return cache
+})
+
 jest.mock('@jbrowse/core/pluggableElementTypes/RpcMethodType', () => ({
   __esModule: true,
   default: class MockRpcMethodType {},
@@ -49,14 +71,20 @@ jest.mock('@lorax/core', () => ({
   normalizeIntervals: mockNormalizeIntervals,
   new_complete_experiment_map: jest.fn(),
   serializeBinsForTransfer: jest.fn(),
-  computeRenderArrays: jest.fn(),
+  createRenderDataCache: mockCreateRenderDataCache,
 }))
 
 jest.mock('@lorax/core/src/workers/modules/intervalUtils.js', () => ({
   buildIntervalsResponse: mockBuildIntervalsResponse,
 }))
 
-import { LoraxConfigRpcMethod, LoraxIntervalsRpcMethod } from './rpcMethods'
+import {
+  LoraxApplyTransformRpcMethod,
+  LoraxClearRenderBuffersRpcMethod,
+  LoraxComputeRenderDataRpcMethod,
+  LoraxConfigRpcMethod,
+  LoraxIntervalsRpcMethod,
+} from './rpcMethods'
 
 describe('LoraxIntervalsRpcMethod', () => {
   let consoleLogSpy: jest.SpyInstance
@@ -64,6 +92,8 @@ describe('LoraxIntervalsRpcMethod', () => {
   beforeEach(() => {
     mockNormalizeIntervals.mockClear()
     mockBuildIntervalsResponse.mockClear()
+    mockCreateRenderDataCache.mockClear()
+    mockRenderCaches.length = 0
     consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
   })
 
@@ -118,5 +148,115 @@ describe('LoraxIntervalsRpcMethod', () => {
       hi: 0,
       count: 0,
     })
+  })
+})
+
+describe('Lorax render RPC cache', () => {
+  let consoleLogSpy: jest.SpyInstance
+
+  beforeEach(() => {
+    mockNormalizeIntervals.mockClear()
+    mockBuildIntervalsResponse.mockClear()
+    mockCreateRenderDataCache.mockClear()
+    mockRenderCaches.length = 0
+    consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    consoleLogSpy.mockRestore()
+  })
+
+  it('uses one render cache for compute and apply calls in the same session', async () => {
+    const pluginManager = {} as ConstructorParameters<
+      typeof LoraxComputeRenderDataRpcMethod
+    >[0]
+    const computeMethod = new LoraxComputeRenderDataRpcMethod(pluginManager)
+    const applyMethod = new LoraxApplyTransformRpcMethod(pluginManager)
+    const sessionId = 'rpc-render-same-session'
+
+    const computeResult = await computeMethod.execute({
+      sessionId,
+      data: { node_id: [1], displayArray: [7] },
+    })
+    const applyResult = await applyMethod.execute({
+      sessionId,
+      data: { modelMatrices: [{ key: 7 }] },
+    })
+
+    expect(mockCreateRenderDataCache).toHaveBeenCalledTimes(1)
+    expect(mockRenderCaches[0].computeRenderArrays).toHaveBeenCalledWith({
+      node_id: [1],
+      displayArray: [7],
+    })
+    expect(mockRenderCaches[0].applyTransform).toHaveBeenCalledWith({
+      modelMatrices: [{ key: 7 }],
+    })
+    expect(computeResult).toMatchObject({ kind: 'compute-render-data' })
+    expect(applyResult).toMatchObject({ kind: 'apply-transform' })
+  })
+
+  it('does not share render caches across sessions', async () => {
+    const pluginManager = {} as ConstructorParameters<
+      typeof LoraxComputeRenderDataRpcMethod
+    >[0]
+    const computeMethod = new LoraxComputeRenderDataRpcMethod(pluginManager)
+    const applyMethod = new LoraxApplyTransformRpcMethod(pluginManager)
+
+    await computeMethod.execute({
+      sessionId: 'rpc-render-session-a',
+      data: { node_id: [1], displayArray: [1] },
+    })
+    await computeMethod.execute({
+      sessionId: 'rpc-render-session-b',
+      data: { node_id: [2], displayArray: [2] },
+    })
+    await applyMethod.execute({
+      sessionId: 'rpc-render-session-a',
+      data: { modelMatrices: [{ key: 1 }] },
+    })
+    await applyMethod.execute({
+      sessionId: 'rpc-render-session-b',
+      data: { modelMatrices: [{ key: 2 }] },
+    })
+
+    expect(mockCreateRenderDataCache).toHaveBeenCalledTimes(2)
+    expect(mockRenderCaches[0].applyTransform).toHaveBeenCalledWith({
+      modelMatrices: [{ key: 1 }],
+    })
+    expect(mockRenderCaches[1].applyTransform).toHaveBeenCalledWith({
+      modelMatrices: [{ key: 2 }],
+    })
+  })
+
+  it('clears only the current session render cache on clear-buffers and config', async () => {
+    const pluginManager = {} as ConstructorParameters<
+      typeof LoraxComputeRenderDataRpcMethod
+    >[0]
+    const computeMethod = new LoraxComputeRenderDataRpcMethod(pluginManager)
+    const clearMethod = new LoraxClearRenderBuffersRpcMethod(pluginManager)
+    const configMethod = new LoraxConfigRpcMethod(pluginManager)
+
+    await computeMethod.execute({
+      sessionId: 'rpc-render-clear-a',
+      data: { node_id: [1], displayArray: [1] },
+    })
+    await computeMethod.execute({
+      sessionId: 'rpc-render-clear-b',
+      data: { node_id: [2], displayArray: [2] },
+    })
+
+    await clearMethod.execute({
+      sessionId: 'rpc-render-clear-a',
+      data: null,
+    })
+    expect(mockRenderCaches[0].clearBuffers).toHaveBeenCalledTimes(1)
+    expect(mockRenderCaches[1].clearBuffers).not.toHaveBeenCalled()
+
+    await configMethod.execute({
+      sessionId: 'rpc-render-clear-b',
+      data: { intervals: [[0, 10]] },
+    })
+    expect(mockRenderCaches[0].clearBuffers).toHaveBeenCalledTimes(1)
+    expect(mockRenderCaches[1].clearBuffers).toHaveBeenCalledTimes(1)
   })
 })

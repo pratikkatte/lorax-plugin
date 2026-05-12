@@ -324,12 +324,8 @@ export default class LoraxAdapter extends BaseFeatureDataAdapter {
   }
 
   freeResources(_region: Region): void {
-    if (this.socket) {
-      this.socket.removeAllListeners()
-      this.socket.disconnect()
-      this.socket = undefined
-    }
-    this.socketPromise = undefined
-    this.loraxSid = undefined
+    // JBrowse calls this for region-level eviction. Lorax socket/session state
+    // is adapter-scoped and shared with the mounted React provider, so do not
+    // tear it down here.
   }
 }
