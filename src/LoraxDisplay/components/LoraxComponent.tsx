@@ -99,26 +99,6 @@ function sanitizeConfigForPersistence(config: LoadFileResult['config']) {
   }
 }
 
-function configWithoutAutoMetadataSelection(config: LoadFileResult['config']) {
-  if (!config || typeof config !== 'object') {
-    return config
-  }
-  const metadataSchema = config.metadata_schema
-  if (
-    !metadataSchema ||
-    typeof metadataSchema !== 'object' ||
-    Array.isArray(metadataSchema)
-  ) {
-    return config
-  }
-  return {
-    ...config,
-    metadata_schema: {
-      ...(metadataSchema as Record<string, unknown>),
-      metadata_keys: [],
-    },
-  }
-}
 
 function serializeLoadSnapshotForDrawer(
   result: LoadFileResult | null,
@@ -390,7 +370,7 @@ function LoraxDeckContainer({
       return
     }
     handleConfigUpdate(
-      configWithoutAutoMetadataSelection(config),
+      config,
       config.initial_position ?? null,
       config.project ?? null,
       config.sid ?? null,
