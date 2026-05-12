@@ -7,38 +7,54 @@
   ],
   "assemblies": [
     {
-      "name": "hg38",
+      "name": "hg19",
       "aliases": [
-        "GRCh38"
+        "GRCh37"
       ],
       "sequence": {
         "type": "ReferenceSequenceTrack",
-        "trackId": "P6R5xbRqRr",
+        "trackId": "hg19-refseq",
         "adapter": {
-          "type": "BgzipFastaAdapter",
-          "fastaLocation": {
-            "uri": "https://jbrowse.org/genomes/GRCh38/fasta/hg38.prefix.fa.gz"
+          "type": "TwoBitAdapter",
+          "twoBitLocation": {
+            "locationType": "UriLocation",
+            "uri": "https://hgdownload.soe.ucsc.edu/goldenPath/hg19/bigZips/hg19.2bit"
           },
-          "faiLocation": {
-            "uri": "https://jbrowse.org/genomes/GRCh38/fasta/hg38.prefix.fa.gz.fai"
+          "chromSizesLocation": {
+            "locationType": "UriLocation",
+            "uri": "https://hgdownload.soe.ucsc.edu/goldenPath/hg19/bigZips/hg19.chrom.sizes"
+          }
+        },
+        "displays": [
+          {
+            "type": "LinearReferenceSequenceDisplay",
+            "displayId": "hg19-refseq-LinearReferenceSequenceDisplay"
           },
-          "gziLocation": {
-            "uri": "https://jbrowse.org/genomes/GRCh38/fasta/hg38.prefix.fa.gz.gzi"
+          {
+            "type": "LinearGCContentDisplay",
+            "displayId": "hg19-refseq-LinearGCContentDisplay"
           }
-        }
-      },
-      "refNameAliases": {
-        "adapter": {
-          "type": "RefNameAliasAdapter",
-          "location": {
-            "uri": "https://s3.amazonaws.com/jbrowse.org/genomes/GRCh38/hg38_aliases.txt"
-          }
-        }
-      },
-      "cytobands": {
-        "adapter": {
-          "type": "CytobandAdapter",
-          "uri": "https://s3.amazonaws.com/jbrowse.org/genomes/GRCh38/cytoBand.txt"
+        ],
+        "metadata": {
+          "description": "Feb. 2009 (GRCh37/hg19)",
+          "nibPath": "/gbdb/hg19",
+          "organism": "Human",
+          "defaultPos": "chr7:155592223-155605565",
+          "active": 1,
+          "orderKey": 60,
+          "genome": "Human",
+          "scientificName": "Homo sapiens",
+          "htmlPath": "/gbdb/hg19/html/description.html",
+          "hgNearOk": 1,
+          "hgPbOk": 0,
+          "sourceName": "GRCh37 Genome Reference Consortium Human Reference 37 (GCA_000001405.1)",
+          "taxId": 9606,
+          "id": "hg19",
+          "name": "hg19",
+          "accession": "hg19",
+          "commonName": "Human",
+          "jbrowseConfig": "https://jbrowse.org/ucsc/hg19/config.json",
+          "jbrowseMinimalConfig": "https://jbrowse.org/ucsc/hg19/minimal.json"
         }
       }
     }
@@ -49,7 +65,7 @@
       "trackId": "genes",
       "name": "NCBI RefSeq Genes",
       "assemblyNames": [
-        "hg38"
+        "hg19"
       ],
       "category": [
         "Genes"
@@ -60,11 +76,105 @@
       }
     },
     {
+      "type": "FeatureTrack",
+      "trackId": "hg19-ncbiRefSeq",
+      "name": "NCBI RefSeq - RefSeq All",
+      "assemblyNames": [
+        "hg19"
+      ],
+      "description": "NCBI RefSeq genes, curated and predicted (NM_*, XM_*, NR_*, XR_*, NP_*, YP_*)",
+      "category": [
+        "Genes and Gene Predictions"
+      ],
+      "metadata": {
+        "ucsc": {
+          "baseColorDefault": "genomicCodons",
+          "baseColorUseCds": "given",
+          "color": "12,12,120",
+          "idXref": "ncbiRefSeqLink mrnaAcc name",
+          "longLabel": "NCBI RefSeq genes, curated and predicted (NM_*, XM_*, NR_*, XR_*, NP_*, YP_*)",
+          "parent": "refSeqComposite off",
+          "priority": "1",
+          "shortLabel": "RefSeq All",
+          "track": "ncbiRefSeq",
+          "html": ""
+        }
+      },
+      "adapter": {
+        "type": "Gff3TabixAdapter",
+        "gffGzLocation": {
+          "locationType": "UriLocation",
+          "uri": "https://jbrowse.org/ucsc/hg19/ncbiRefSeq.gff.gz"
+        },
+        "index": {
+          "indexType": "CSI",
+          "location": {
+            "locationType": "UriLocation",
+            "uri": "https://jbrowse.org/ucsc/hg19/ncbiRefSeq.gff.gz.csi"
+          }
+        }
+      },
+      "displays": [
+        {
+          "type": "LinearBasicDisplay",
+          "displayId": "hg19-ncbiRefSeq-LinearBasicDisplay"
+        },
+        {
+          "type": "LinearArcDisplay",
+          "displayId": "hg19-ncbiRefSeq-LinearArcDisplay"
+        }
+      ]
+    },
+    {
+      "type": "FeatureTrack",
+      "trackId": "hg19-dbSnp153",
+      "name": "Variants - All dbSNP(153)",
+      "assemblyNames": [
+        "hg19"
+      ],
+      "description": "All Short Genetic Variants from dbSNP Release 153",
+      "category": [
+        "Variation and Repeats"
+      ],
+      "metadata": {
+        "ucsc": {
+          "bigDataUrl": "/gbdb/hg19/snp/dbSnp153.bb",
+          "defaultGeneTracks": "knownGene",
+          "longLabel": "All Short Genetic Variants from dbSNP Release 153",
+          "maxWindowToDraw": "1000000",
+          "parent": "dbSnp153ViewVariants off",
+          "priority": "4",
+          "shortLabel": "All dbSNP(153)",
+          "subGroups": "view=variants",
+          "tableBrowser": "noGenome",
+          "track": "dbSnp153",
+          "html": ""
+        }
+      },
+      "adapter": {
+        "type": "BigBedAdapter",
+        "bigBedLocation": {
+          "locationType": "UriLocation",
+          "uri": "https://hgdownload.soe.ucsc.edu/gbdb/hg19/snp/dbSnp153.bb"
+        }
+      },
+      "displays": [
+        {
+          "type": "LinearBasicDisplay",
+          "displayId": "hg19-dbSnp153-LinearBasicDisplay"
+        },
+        {
+          "type": "LinearArcDisplay",
+          "displayId": "hg19-dbSnp153-LinearArcDisplay"
+        }
+      ]
+    },
+    {
       "type": "LoraxTrack",
       "trackId": "lorax_track",
       "name": "Lorax",
       "assemblyNames": [
-        "hg38"
+        "hg19"
       ],
       "category": [
         "ARGs"

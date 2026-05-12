@@ -1,6 +1,9 @@
 import { babel } from '@rollup/plugin-babel'
-import globals from '@jbrowse/core/ReExports/list'
 import { createRollupConfig } from '@jbrowse/development-tools'
+
+// `@jbrowse/core` v4 `exports` only exposes ReExports/list for ESM `import`;
+// Rollup's `--bundleConfigAsCjs` would `require()` it and fail. Dynamic import
+// keeps Node's ESM resolver (and matches the array shape via `.default`).
 
 /**
  * @lorax/core ships JSX under node_modules; JBrowse's babel excludes all of
@@ -38,6 +41,7 @@ function withWorkerInlineExternal(external) {
     // '@mui/material/styles'` resolve correctly. createTheme is a pure function
     // with no dependency on emotion instance identity, so a second copy is safe.
     '@mui/material/styles',
+    '@emotion/styled',
   ])
   return id => {
     if (typeof id === 'string' && forceBundle.has(id)) {
@@ -195,13 +199,13 @@ const includeCJS = stringToBoolean(process.env.JB_CJS)
 const includeESMBundle = stringToBoolean(process.env.JB_ESM_BUNDLE)
 const includeNPM = stringToBoolean(process.env.JB_NPM)
 
-const rawConfigs = createRollupConfig(globals.default, {
-  includeUMD,
-  includeCJS,
-  includeESMBundle,
-  includeNPM,
+export default import('@jbrowse/core/ReExports/list').then(mod => {
+  const rawConfigs = createRollupConfig(mod.default, {
+    includeUMD,
+    includeCJS,
+    includeESMBundle,
+    includeNPM,
+  })
+  const configs = Array.isArray(rawConfigs) ? rawConfigs : [rawConfigs]
+  return configs.map(injectLoraxCoreBabel)
 })
-
-const configs = Array.isArray(rawConfigs) ? rawConfigs : [rawConfigs]
-
-export default configs.map(injectLoraxCoreBabel)

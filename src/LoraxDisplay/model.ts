@@ -1,4 +1,4 @@
-import { types, Instance } from 'mobx-state-tree'
+import { types, Instance } from '@jbrowse/mobx-state-tree'
 import {
   ConfigurationReference,
   AnyConfigurationSchemaType,
@@ -6,7 +6,7 @@ import {
 } from '@jbrowse/core/configuration'
 import { BaseDisplay } from '@jbrowse/core/pluggableElementTypes/models'
 import { getContainingTrack, getSession } from '@jbrowse/core/util'
-import TrackHeightMixin from '@jbrowse/plugin-linear-genome-view/esm/BaseLinearDisplay/models/TrackHeightMixin'
+import { TrackHeightMixin } from '@jbrowse/plugin-linear-genome-view'
 
 import type { MenuItem } from '@jbrowse/core/ui'
 import SettingsIcon from '@mui/icons-material/Settings'

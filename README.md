@@ -15,8 +15,8 @@ project.
 - [Node.js](https://nodejs.org/en/download/) (version 10 or greater)
 - npm (which comes with Node.js)
 - [yarn](https://yarnpkg.com/en/docs/install) (optional)
-- [JBrowse 2](https://github.com/gmod/jbrowse-components) (version 2.0 or
-  greater)
+- [JBrowse 2](https://github.com/gmod/jbrowse-components) with `@jbrowse/core`
+  **4.x** (install matching JBrowse Web / CLI major line)
 
 ### Create a new project from this template
 

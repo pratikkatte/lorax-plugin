@@ -1,6 +1,6 @@
 import { lazy } from 'react'
 import { AddTrackWorkflowType } from '@jbrowse/core/pluggableElementTypes'
-import { types } from 'mobx-state-tree'
+import { types } from '@jbrowse/mobx-state-tree'
 import type PluginManager from '@jbrowse/core/PluginManager'
 
 export default function LoraxAddTrackWorkflowF(pm: PluginManager) {
