@@ -1240,7 +1240,6 @@ const LoraxComponent = observer(function LoraxComponent({
 
   useEffect(() => {
     if (!adapterConfig) {
-      console.log('[LoraxPlugin] adapter config not available')
       model.setLoadResultSnapshot(null)
       return
     }
@@ -1269,12 +1268,6 @@ const LoraxComponent = observer(function LoraxComponent({
         setLoadResult(result)
         setLoadError(null)
         model.setLoadResultSnapshot(serializeLoadSnapshotForDrawer(result))
-        console.log('[LoraxPlugin] load_file result', {
-          hasConfig: !!result?.config,
-          loraxSid: result?.loraxSid,
-          intervalsCount: (result?.config as { intervals?: unknown[] })
-            ?.intervals?.length,
-        })
       } catch (error) {
         if (cancelled) {
           return
@@ -1355,21 +1348,6 @@ const LoraxComponent = observer(function LoraxComponent({
     fallbackIntervalCoords: loadConfig?.initial_position,
     jbrowseIntervalCoords,
   })
-
-  useEffect(() => {
-    if (!view?.dynamicBlocks?.contentBlocks) return
-    console.log('[LoraxPlugin] dynamic blocks', {
-      blocks: view.dynamicBlocks.contentBlocks.map(
-        (block: { refName?: string; start?: number; end?: number }) => ({
-          refName: block.refName,
-          start: block.start,
-          end: block.end,
-        }),
-      ),
-      jbrowseIntervalCoords,
-      intervalCoords,
-    })
-  }, [view?.dynamicBlocks?.contentBlocks, jbrowseIntervalCoords, intervalCoords])
 
   useEffect(() => {
     const element = trackContainerRef.current

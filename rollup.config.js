@@ -111,6 +111,10 @@ function withInlineDynamicImports(output) {
 
 function withJBrowseSubpathGlobals(output) {
   const extraGlobals = {
+    // Some packaged JBrowse Web builds expose MST under the historical
+    // unscoped key even when @jbrowse/core's re-export list contains both.
+    '@jbrowse/mobx-state-tree': 'JBrowseExports.mobx-state-tree',
+    'mobx-state-tree': 'JBrowseExports.mobx-state-tree',
     '@jbrowse/core/ui/BaseTooltip': 'JBrowseExports["BaseTooltip"]',
     '@jbrowse/core/ui/ErrorBoundary': 'JBrowseExports["ErrorBoundary"]',
     '@jbrowse/core/util/stopToken': 'JBrowseExports["stopToken"]',
