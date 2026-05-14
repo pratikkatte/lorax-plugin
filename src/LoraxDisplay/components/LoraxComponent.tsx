@@ -20,7 +20,11 @@ import {
   buildDetailsRequestForPick,
   type SelectionDetail,
 } from '../detailsRequest'
-import { LORAX_METADATA_WIDGET_ID, LoraxDisplayModel } from '../model'
+import {
+  LORAX_METADATA_WIDGET_ID,
+  LoraxDisplayModel,
+  type LoraxSvgExportProvider,
+} from '../model'
 import { useStableIntervalCoords } from '../useStableIntervalCoords'
 import { computeStrictVisibleRegion } from '../viewport'
 import {
@@ -199,6 +203,7 @@ type DeckPickEvent = { srcEvent?: MouseEvent | PointerEvent | TouchEvent }
 type DeckRef = {
   viewAdjustY?: () => boolean
   setGenomicCoords?: (coords: [number, number]) => void
+  getSVGString?: (polygonColor?: [number, number, number, number]) => string | null
 }
 
 const FILTER_TAB_INDEX = 2
@@ -1237,6 +1242,36 @@ const LoraxComponent = observer(function LoraxComponent({
       ),
     [view, view?.offsetPx, view?.width, view?.dynamicBlocks?.contentBlocks],
   )
+
+  useEffect(() => {
+    const provider: LoraxSvgExportProvider = async () => {
+      await waitForTreeLoad()
+      await new Promise<void>(resolve => {
+        if (typeof window.requestAnimationFrame !== 'function') {
+          resolve()
+          return
+        }
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => resolve())
+        })
+      })
+
+      const svg = deckRef.current?.getSVGString?.(polygonFillColor)
+      if (!svg) {
+        return null
+      }
+      return {
+        svg,
+        x: visibleRegion.placement.leftPx,
+        y: 0,
+      }
+    }
+
+    model.setSvgExportProvider(provider)
+    return () => {
+      model.setSvgExportProvider(undefined)
+    }
+  }, [deckRef, model, polygonFillColor, visibleRegion.placement.leftPx, waitForTreeLoad])
 
   useEffect(() => {
     if (!adapterConfig) {

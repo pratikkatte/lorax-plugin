@@ -2,6 +2,11 @@ declare module '*.json'
 
 /** JavaScript package `packages/core`; ambient exports used by this plugin. */
 declare module '@lorax/core' {
+  export interface LoraxDeckGLHandle {
+    viewAdjustY?: () => boolean
+    setGenomicCoords?: (coords: [number, number]) => void
+    getSVGString?: (polygonColor?: [number, number, number, number]) => string | null
+  }
   export const LoraxProvider: any
   export function useLorax(): any
   export const LoraxDeckGL: any

@@ -22,6 +22,21 @@ import SettingsIcon from '@mui/icons-material/Settings'
 /** Stable drawer widget instance id (see LoraxMetadataWidget). */
 export const LORAX_METADATA_WIDGET_ID = 'loraxMetadata'
 
+export interface LoraxSvgExportResult {
+  svg: string
+  x?: number
+  y?: number
+}
+
+export type LoraxSvgExportProvider = (
+  opts: ExportSvgDisplayOptions,
+) => Promise<LoraxSvgExportResult | null | undefined>
+
+interface LoraxRenderSvgSelf {
+  height: number
+  svgExportProvider?: LoraxSvgExportProvider
+}
+
 interface WidgetSession {
   addWidget: (...args: unknown[]) => unknown
   showWidget: (widget: unknown) => void
@@ -73,6 +88,66 @@ function sanitizeSnapshot(snapshot: unknown) {
   }
 }
 
+export function renderFallbackSvg(
+  self: { height: number },
+  opts: ExportSvgDisplayOptions,
+  message = 'Lorax view is not ready for export.',
+) {
+  const view = getContainingView(self as never)
+  const { width } = view
+  const height = opts.overrideHeight ?? self.height
+  const theme = createJBrowseTheme(opts.theme)
+  const pad = 8
+  const labelY = Math.min(height - pad, pad + 14)
+  return (
+    <g>
+      <rect
+        x={0}
+        y={0}
+        width={width}
+        height={height}
+        fill={theme.palette.background.default}
+        stroke={theme.palette.divider}
+        strokeWidth={1}
+      />
+      <text
+        x={pad}
+        y={labelY}
+        fill={theme.palette.text.secondary}
+        fontSize={12}
+      >
+        {message}
+      </text>
+    </g>
+  )
+}
+
+export async function renderLoraxDisplaySvg(
+  self: LoraxRenderSvgSelf,
+  opts: ExportSvgDisplayOptions,
+): Promise<JSX.Element> {
+  const provider = self.svgExportProvider
+  if (!provider) {
+    return renderFallbackSvg(self, opts)
+  }
+
+  try {
+    const result = await provider(opts)
+    if (!result?.svg) {
+      return renderFallbackSvg(self, opts)
+    }
+    return (
+      <g
+        transform={`translate(${result.x ?? 0} ${result.y ?? 0})`}
+        dangerouslySetInnerHTML={{ __html: result.svg }}
+      />
+    )
+  } catch (error) {
+    console.error('[LoraxPlugin] SVG export failed', error)
+    return renderFallbackSvg(self, opts)
+  }
+}
+
 export default function stateModelFactory(
   configSchema: AnyConfigurationSchemaType,
 ) {
@@ -93,7 +168,13 @@ export default function stateModelFactory(
   )
 
   return model
+    .volatile(() => ({
+      svgExportProvider: undefined as LoraxSvgExportProvider | undefined,
+    }))
     .actions(self => ({
+      setSvgExportProvider(provider: LoraxSvgExportProvider | undefined) {
+        self.svgExportProvider = provider
+      },
       setMetadataView(value: boolean) {
         self.metadataViewEnabled = value
       },
@@ -118,34 +199,8 @@ export default function stateModelFactory(
       setLoadResultSnapshot(snapshot: unknown) {
         self.loadResultSnapshot = sanitizeSnapshot(snapshot)
       },
-      renderSvg(opts: ExportSvgDisplayOptions): Promise<JSX.Element> {
-        const view = getContainingView(self)
-        const { width } = view
-        const height = opts.overrideHeight ?? self.height
-        const theme = createJBrowseTheme(opts.theme)
-        const pad = 8
-        const labelY = Math.min(height - pad, pad + 14)
-        return Promise.resolve(
-          <g>
-            <rect
-              x={0}
-              y={0}
-              width={width}
-              height={height}
-              fill={theme.palette.background.default}
-              stroke={theme.palette.divider}
-              strokeWidth={1}
-            />
-            <text
-              x={pad}
-              y={labelY}
-              fill={theme.palette.text.secondary}
-              fontSize={12}
-            >
-              Lorax WebGL view is not included in SVG/PNG export.
-            </text>
-          </g>,
-        )
+      async renderSvg(opts: ExportSvgDisplayOptions): Promise<JSX.Element> {
+        return renderLoraxDisplaySvg(self, opts)
       },
     }))
     .views(self => ({
