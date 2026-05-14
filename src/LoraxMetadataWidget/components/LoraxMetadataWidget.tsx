@@ -489,6 +489,30 @@ const useStyles = makeStyles()(theme => ({
     padding: theme.spacing(0.5, 1),
     borderBottom: `1px solid ${theme.palette.divider}`,
   },
+  colorInput: {
+    width: 28,
+    height: 28,
+    flex: '0 0 28px',
+    padding: 2,
+    border: `1px solid ${theme.palette.divider}`,
+    borderRadius: '50%',
+    backgroundColor: theme.palette.background.paper,
+    cursor: 'pointer',
+    overflow: 'hidden',
+    appearance: 'none',
+    WebkitAppearance: 'none',
+    '&::-webkit-color-swatch-wrapper': {
+      padding: 0,
+    },
+    '&::-webkit-color-swatch': {
+      border: 0,
+      borderRadius: '50%',
+    },
+    '&::-moz-color-swatch': {
+      border: 0,
+      borderRadius: '50%',
+    },
+  },
   tag: {
     display: 'inline-flex',
     alignItems: 'center',
@@ -1044,6 +1068,7 @@ function FilterContent({
                   >
                     <input
                       type="color"
+                      className={classes.colorInput}
                       aria-label={`Color for ${value}`}
                       value={rgbaToHex(color)}
                       onChange={event => {
@@ -1177,6 +1202,7 @@ function FilterContent({
                     </Typography>
                     <input
                       type="color"
+                      className={classes.colorInput}
                       aria-label={`Tree ${treeIndex} color`}
                       value={filterState.treeColors[key] ?? '#91C2F4'}
                       onChange={event =>

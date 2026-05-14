@@ -105,6 +105,12 @@ export default class LoraxAdapter extends BaseFeatureDataAdapter {
   }
 
   private async ensureSession() {
+    const configuredSid = this.getConf('loraxSid') as string
+    if (configuredSid) {
+      this.loraxSid = configuredSid
+      return configuredSid
+    }
+
     if (this.loraxSid) {
       return this.loraxSid
     }

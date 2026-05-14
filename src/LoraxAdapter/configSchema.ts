@@ -21,6 +21,10 @@ export default ConfigurationSchema('LoraxAdapter', {
     type: 'string',
     defaultValue: '',
   },
+  loraxSid: {
+    type: 'string',
+    defaultValue: '',
+  },
   useUpload: {
     type: 'boolean',
     defaultValue: false,
