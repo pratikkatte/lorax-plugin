@@ -31,6 +31,7 @@ export interface LoraxSvgExportResult {
 export type LoraxSvgExportProvider = (
   opts: ExportSvgDisplayOptions,
 ) => Promise<LoraxSvgExportResult | null | undefined>
+export type LoraxResetViewProvider = () => boolean | void
 
 interface LoraxRenderSvgSelf {
   height: number
@@ -171,10 +172,14 @@ export default function stateModelFactory(
   return model
     .volatile(() => ({
       svgExportProvider: undefined as LoraxSvgExportProvider | undefined,
+      resetViewProvider: undefined as LoraxResetViewProvider | undefined,
     }))
     .actions(self => ({
       setSvgExportProvider(provider: LoraxSvgExportProvider | undefined) {
         self.svgExportProvider = provider
+      },
+      setResetViewProvider(provider: LoraxResetViewProvider | undefined) {
+        self.resetViewProvider = provider
       },
       setMetadataView(value: boolean) {
         self.metadataViewEnabled = value
@@ -214,6 +219,12 @@ export default function stateModelFactory(
             label: 'File Info',
             onClick: () => {
               self.openFileInfoDialog()
+            },
+          },
+          {
+            label: 'Reset view',
+            onClick: () => {
+              self.resetViewProvider?.()
             },
           },
           {

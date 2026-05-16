@@ -67,10 +67,16 @@ describe('LoraxDisplay track menu', () => {
 
     let menuItems: any[] = model.trackMenuItems()
     const labels = menuItems.map(item => item.label)
+    const fileInfoIndex = labels.indexOf('File Info')
+    const resetViewIndex = labels.indexOf('Reset view')
     const lockItem = findMenuItem(menuItems, 'Lock view')
     const settingsIndex = labels.indexOf('Settings')
     const lockIndex = labels.indexOf('Lock view')
 
+    expect(resetViewIndex).toBe(fileInfoIndex + 1)
+    expect(findMenuItem(menuItems, 'Reset view')).toMatchObject({
+      label: 'Reset view',
+    })
     expect(lockItem).toMatchObject({
       type: 'checkbox',
       label: 'Lock view',
@@ -93,6 +99,16 @@ describe('LoraxDisplay track menu', () => {
     expect(findMenuItem(menuItems, 'Lock view')).toMatchObject({
       checked: true,
     })
+  })
+
+  it('calls the registered reset view provider from the track menu', () => {
+    const model = createModel()
+    const resetView = jest.fn(() => true)
+
+    model.setResetViewProvider(resetView)
+    findMenuItem(model.trackMenuItems(), 'Reset view')?.onClick?.()
+
+    expect(resetView).toHaveBeenCalledTimes(1)
   })
 })
 

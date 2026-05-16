@@ -9,6 +9,12 @@ declare module '@lorax/core' {
   }
   export const LoraxProvider: any
   export function useLorax(): any
+  export function useMutations(options: {
+    genomicValues?: [number, number] | number[] | null
+    queryMutationsWindow?: (...args: any[]) => Promise<any>
+    searchMutations?: (...args: any[]) => Promise<any>
+    isConnected?: boolean
+  }): any
   export const LoraxDeckGL: any
   export function formatTooltipTime(value: unknown): string
 

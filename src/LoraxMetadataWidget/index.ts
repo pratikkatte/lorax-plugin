@@ -47,10 +47,12 @@ const stateModel = types
     snapshot: types.maybeNull(types.frozen()),
     selectedDetail: types.maybeNull(types.frozen()),
     detailsState: types.maybeNull(types.frozen()),
+    mutationState: types.maybeNull(types.frozen()),
     filterState: types.maybeNull(types.frozen()),
     activeTab: types.optional(types.number, 0),
   })
   .volatile(() => ({
+    mutationController: null as unknown,
     filterController: null as unknown,
   }))
   .actions(self => ({
@@ -62,6 +64,12 @@ const stateModel = types
     },
     setDetailsState(detailsState: unknown) {
       self.detailsState = detailsState
+    },
+    setMutationState(mutationState: unknown) {
+      self.mutationState = mutationState
+    },
+    setMutationController(mutationController: unknown) {
+      self.mutationController = mutationController
     },
     setFilterState(filterState: unknown) {
       self.filterState = filterState

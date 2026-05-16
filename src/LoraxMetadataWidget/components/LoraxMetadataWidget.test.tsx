@@ -224,6 +224,69 @@ describe('LoraxMetadataWidget Details tab', () => {
   })
 })
 
+describe('LoraxMetadataWidget Mutations tab', () => {
+  it('renders live mutation query results', () => {
+    renderWidget({
+      activeTab: 1,
+      mutationState: {
+        mutations: [
+          {
+            position: 42,
+            ancestral_state: 'A',
+            derived_state: 'T',
+            node_id: 5,
+            site_id: 2,
+          },
+        ],
+        totalCount: 1,
+        hasMore: false,
+        isLoading: false,
+        error: null,
+        searchPosition: null,
+        searchRange: 5000,
+        isSearchMode: false,
+      },
+    })
+
+    expect(screen.getByText('Mutations (1)')).toBeTruthy()
+    expect(screen.getByText('A → T (Pos: 42)')).toBeTruthy()
+    expect(screen.getByText('Node 5')).toBeTruthy()
+  })
+
+  it('calls the mutation controller when a mutation row is clicked', () => {
+    const controller = {
+      navigateToMutation: jest.fn(),
+    }
+    const mutation = {
+      position: 42,
+      ancestral_state: 'A',
+      derived_state: 'T',
+      node_id: 5,
+      site_id: 2,
+    }
+    renderWidget({
+      activeTab: 1,
+      mutationState: {
+        mutations: [mutation],
+        totalCount: 1,
+        hasMore: false,
+        isLoading: false,
+        error: null,
+        searchPosition: null,
+        searchRange: 5000,
+        isSearchMode: false,
+      },
+      mutationController: controller,
+    })
+
+    fireEvent.click(screen.getByRole('button', {
+      name: 'Go to mutation at position 42',
+    }))
+
+    expect(controller.navigateToMutation).toHaveBeenCalledWith(mutation)
+  })
+})
+
 describe('LoraxMetadataWidget Filter tab', () => {
   const filterState = {
     tsconfig: {

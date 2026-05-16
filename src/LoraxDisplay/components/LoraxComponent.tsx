@@ -15,6 +15,7 @@ import {
   LoraxProvider,
   formatTooltipTime,
   useLorax,
+  useMutations,
 } from '@lorax/core'
 import {
   buildDetailsRequestForPick,
@@ -28,6 +29,7 @@ import {
 import { useStableIntervalCoords } from '../useStableIntervalCoords'
 import { computeStrictVisibleRegion } from '../viewport'
 import { getLoraxLoadingStatus } from '../loadingStatus'
+import { useInitialViewReset } from '../useInitialViewReset'
 import {
   numberArraysEqual,
   useStartupStableIntervalCoords,
@@ -175,6 +177,8 @@ type MetadataWidgetModel = {
   setSnapshot?: (snapshot: unknown) => void
   setSelectedDetail?: (detail: unknown) => void
   setDetailsState?: (detailsState: unknown) => void
+  setMutationState?: (mutationState: unknown) => void
+  setMutationController?: (mutationController: unknown) => void
   setFilterState?: (filterState: unknown) => void
   setFilterController?: (filterController: unknown) => void
   setActiveTab?: (activeTab: number) => void
@@ -597,6 +601,7 @@ function LoraxMetadataWidgetBridge({
   model,
   loadResult,
   view,
+  genomicValues,
   deckRef,
   metadataWidgetRef,
   visibleTrees,
@@ -615,6 +620,7 @@ function LoraxMetadataWidgetBridge({
   model: LoraxDisplayModel
   loadResult: LoadFileResult | null
   view: LinearGenomeViewModel
+  genomicValues: [number, number] | null
   deckRef: React.RefObject<DeckRef>
   metadataWidgetRef: React.MutableRefObject<MetadataWidgetModel | null>
   visibleTrees: number[]
@@ -653,7 +659,17 @@ function LoraxMetadataWidgetBridge({
     setHighlightedMetadataValue,
     displayLineagePaths = false,
     setDisplayLineagePaths,
+    queryMutationsWindow,
+    searchMutations,
+    isConnected,
   } = useLorax()
+
+  const mutationsHook = useMutations({
+    genomicValues,
+    queryMutationsWindow,
+    searchMutations,
+    isConnected,
+  })
 
   const [activeFeatureId, setActiveFeatureId] = useState<string | null>(null)
   const [pendingFeature, setPendingFeature] = useState<MetadataFeature | null>(
@@ -895,6 +911,103 @@ function LoraxMetadataWidgetBridge({
     ],
   )
 
+  const mutationState = useMemo(
+    () => ({
+      mutations: mutationsHook.mutations || [],
+      totalCount: mutationsHook.totalCount || 0,
+      hasMore: Boolean(mutationsHook.hasMore),
+      isLoading: Boolean(mutationsHook.isLoading),
+      error: mutationsHook.error ?? null,
+      searchPosition: mutationsHook.searchPosition ?? null,
+      searchRange: mutationsHook.searchRange ?? 5000,
+      isSearchMode: Boolean(mutationsHook.isSearchMode),
+    }),
+    [
+      mutationsHook.error,
+      mutationsHook.hasMore,
+      mutationsHook.isLoading,
+      mutationsHook.isSearchMode,
+      mutationsHook.mutations,
+      mutationsHook.searchPosition,
+      mutationsHook.searchRange,
+      mutationsHook.totalCount,
+    ],
+  )
+
+  const navigateToMutation = useCallback(
+    async (mutation: Record<string, unknown>) => {
+      const position = Number(mutation.position ?? mutation.position_bp)
+      if (!Number.isFinite(position)) {
+        return
+      }
+
+      const [currentStart, currentEnd] = Array.isArray(genomicValues)
+        ? genomicValues.map(Number)
+        : [Number.NaN, Number.NaN]
+      const currentSpan =
+        Number.isFinite(currentStart) &&
+        Number.isFinite(currentEnd) &&
+        currentEnd > currentStart
+          ? currentEnd - currentStart
+          : 1000
+      const genomeLength = Number(loadResult?.config?.genome_length)
+      const span =
+        Number.isFinite(genomeLength) && genomeLength > 0
+          ? Math.min(currentSpan, genomeLength)
+          : currentSpan
+
+      let start = Math.max(0, Math.floor(position - span / 2))
+      let end = Math.ceil(start + span)
+      if (Number.isFinite(genomeLength) && genomeLength > 0 && end > genomeLength) {
+        end = Math.ceil(genomeLength)
+        start = Math.max(0, Math.floor(end - span))
+      }
+      if (end <= start) {
+        end = start + 1
+      }
+
+      await navigateToCoords([start, end])
+
+      const nodeId = mutation.node_id ?? mutation.node
+      if (nodeId !== null && nodeId !== undefined && nodeId !== '') {
+        setHighlightedMutationNode(String(nodeId))
+      }
+      const treeIndex =
+        mutation.tree_idx ??
+        mutation.treeIndex ??
+        mutation.treeindx ??
+        null
+      setHighlightedMutationTreeIndex(
+        treeIndex === '' ? null : (treeIndex as string | number | null),
+      )
+    },
+    [
+      genomicValues,
+      loadResult?.config?.genome_length,
+      navigateToCoords,
+      setHighlightedMutationNode,
+      setHighlightedMutationTreeIndex,
+    ],
+  )
+
+  const mutationController = useMemo(
+    () => ({
+      loadMore: () => mutationsHook.loadMore?.(),
+      triggerSearch: (position: number | null, range?: number) =>
+        mutationsHook.triggerSearch?.(position, range),
+      clearSearch: () => mutationsHook.clearSearch?.(),
+      setSearchRange: (range: number) => mutationsHook.setSearchRange?.(range),
+      navigateToMutation,
+    }),
+    [
+      navigateToMutation,
+      mutationsHook.clearSearch,
+      mutationsHook.loadMore,
+      mutationsHook.setSearchRange,
+      mutationsHook.triggerSearch,
+    ],
+  )
+
   const controller = useMemo(
     () => ({
       setSearchTerm: (value: string) => setSearchTerm?.(value),
@@ -996,16 +1109,28 @@ function LoraxMetadataWidgetBridge({
         trackLabel,
         snapshot,
         filterState,
+        mutationState,
         activeTab: FILTER_TAB_INDEX,
       }) as MetadataWidgetModel)
     widget.setSnapshot?.(snapshot)
     widget.setFilterState?.(filterState)
     widget.setFilterController?.(controller)
+    widget.setMutationState?.(mutationState)
+    widget.setMutationController?.(mutationController)
     widget.setActiveTab?.(FILTER_TAB_INDEX)
     metadataWidgetRef.current = widget
     session.showWidget(widget)
     model.setMetadataView(true)
-  }, [controller, filterState, loadResult, metadataWidgetRef, model, session])
+  }, [
+    controller,
+    filterState,
+    loadResult,
+    metadataWidgetRef,
+    model,
+    mutationController,
+    mutationState,
+    session,
+  ])
 
   useEffect(() => {
     const widget = session?.widgets?.get?.(LORAX_METADATA_WIDGET_ID) as
@@ -1017,8 +1142,17 @@ function LoraxMetadataWidgetBridge({
     }
     existing.setFilterState?.(filterState)
     existing.setFilterController?.(controller)
+    existing.setMutationState?.(mutationState)
+    existing.setMutationController?.(mutationController)
     metadataWidgetRef.current = existing
-  }, [controller, filterState, metadataWidgetRef, session])
+  }, [
+    controller,
+    filterState,
+    metadataWidgetRef,
+    mutationController,
+    mutationState,
+    session,
+  ])
 
   useEffect(() => {
     const currentId = getPresetFeatureIdFromURL()
@@ -1416,6 +1550,18 @@ const LoraxComponent = observer(function LoraxComponent({
       (loadConfig as Record<string, unknown>).genome_length ?? '',
     ].join('|')
   }, [loadConfig, loadResult?.loraxSid])
+  const initialViewResetKey = configKey === 'pending' ? null : configKey
+  useInitialViewReset({
+    deckRef,
+    loadKey: initialViewResetKey,
+    ready: Boolean(loadConfig) && !treeIsLoading && trackSize.width > 0,
+  })
+  useEffect(() => {
+    model.setResetViewProvider(() => deckRef.current?.viewAdjustY?.())
+    return () => {
+      model.setResetViewProvider(undefined)
+    }
+  }, [model])
   const jbrowseViewForCoords = view as unknown as {
     pxToBp?: unknown
     width?: unknown
@@ -1514,6 +1660,7 @@ const LoraxComponent = observer(function LoraxComponent({
           model={model}
           loadResult={loadResult}
           view={view}
+          genomicValues={visibleRegion.intervalCoords}
           deckRef={deckRef}
           metadataWidgetRef={metadataWidgetRef}
           visibleTrees={visibleTrees}

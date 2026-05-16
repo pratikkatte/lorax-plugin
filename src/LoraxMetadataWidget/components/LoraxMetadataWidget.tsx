@@ -24,6 +24,8 @@ type LoraxMetadataWidgetModel = IStateTreeNode & {
   snapshot?: unknown
   selectedDetail?: unknown
   detailsState?: unknown
+  mutationState?: unknown
+  mutationController?: MutationController | null
   filterState?: unknown
   filterController?: FilterController | null
   activeTab?: number
@@ -85,6 +87,25 @@ interface ParsedFilterState {
   activeFeatureId: string | null
 }
 
+interface ParsedMutationState {
+  mutations: Record<string, unknown>[]
+  totalCount: number
+  hasMore: boolean
+  isLoading: boolean
+  error: string | null
+  searchPosition: number | null
+  searchRange: number
+  isSearchMode: boolean
+}
+
+interface MutationController {
+  loadMore?: () => void
+  triggerSearch?: (position: number | null, range?: number) => void
+  clearSearch?: () => void
+  setSearchRange?: (range: number) => void
+  navigateToMutation?: (mutation: Record<string, unknown>) => void
+}
+
 interface FilterController {
   setSearchTerm?: (value: string) => void
   setSearchTags?: (values: string[]) => void
@@ -105,6 +126,7 @@ interface FilterController {
 }
 
 const ITEMS_PER_PAGE = 100
+const DEFAULT_MUTATION_SEARCH_RANGE = 5000
 const SOURCE_ORDER = ['individual', 'node', 'population']
 const SOURCE_LABELS: Record<string, string> = {
   individual: 'Individuals',
@@ -253,6 +275,30 @@ function parseFilterState(raw: unknown): ParsedFilterState {
   }
 }
 
+function parseMutationState(raw: unknown): ParsedMutationState | null {
+  if (!isRecord(raw)) {
+    return null
+  }
+  const totalCount = Number(raw.totalCount)
+  const searchPosition =
+    raw.searchPosition === null || raw.searchPosition === undefined
+      ? Number.NaN
+      : Number(raw.searchPosition)
+  const searchRange = Number(raw.searchRange)
+  return {
+    mutations: getRecordArray(raw.mutations),
+    totalCount: Number.isFinite(totalCount) ? totalCount : 0,
+    hasMore: raw.hasMore === true,
+    isLoading: raw.isLoading === true,
+    error: typeof raw.error === 'string' ? raw.error : null,
+    searchPosition: Number.isFinite(searchPosition) ? searchPosition : null,
+    searchRange: Number.isFinite(searchRange)
+      ? searchRange
+      : DEFAULT_MUTATION_SEARCH_RANGE,
+    isSearchMode: raw.isSearchMode === true,
+  }
+}
+
 function rgbaToHex(rgba: unknown) {
   if (!Array.isArray(rgba)) return '#969696'
   const [r, g, b] = rgba.map(Number)
@@ -313,12 +359,19 @@ function getMutationsList(
 
 function formatMutationRow(m: Record<string, unknown>): string {
   const derived = m.derived_state ?? m.derivedState
-  const inherited = m.inherited_state ?? m.inheritedState
-  const pos = m.position
-  const left = inherited != null ? String(inherited) : '?'
-  const right = derived != null ? String(derived) : '?'
+  const inherited =
+    m.inherited_state ?? m.inheritedState ?? m.ancestral_state ?? m.ancestralState
+  const mutation = m.mutation
+  const pos = m.position ?? m.position_bp
+  const left =
+    inherited != null
+      ? String(inherited)
+      : typeof mutation === 'string'
+        ? mutation
+        : '?'
+  const right = derived != null ? String(derived) : mutation == null ? '?' : ''
   const posStr = pos != null ? ` (Pos: ${formatScalar(pos) ?? '?'})` : ''
-  return `${left} → ${right}${posStr}`
+  return right ? `${left} → ${right}${posStr}` : `${left}${posStr}`
 }
 
 function formatLabel(key: string) {
@@ -825,6 +878,216 @@ function DetailsContent({
   )
 }
 
+function getMutationNodeLabel(mutation: Record<string, unknown>) {
+  const node = mutation.node_id ?? mutation.node
+  return node == null ? null : `Node ${formatScalar(node) ?? '—'}`
+}
+
+function getMutationPosition(mutation: Record<string, unknown>) {
+  const position = Number(mutation.position ?? mutation.position_bp)
+  return Number.isFinite(position) ? position : null
+}
+
+function MutationContent({
+  mutationState,
+  fallbackMutations,
+  controller,
+}: {
+  mutationState: ParsedMutationState | null
+  fallbackMutations: Record<string, unknown>[]
+  controller?: MutationController | null
+}) {
+  const { classes } = useStyles()
+  const mutations = mutationState?.mutations ?? fallbackMutations
+  const totalCount = mutationState?.totalCount ?? mutations.length
+  const hasLiveState = Boolean(mutationState)
+  const [searchText, setSearchText] = useState(
+    mutationState?.searchPosition == null
+      ? ''
+      : String(mutationState.searchPosition),
+  )
+  const [rangeText, setRangeText] = useState(
+    String(mutationState?.searchRange ?? DEFAULT_MUTATION_SEARCH_RANGE),
+  )
+
+  useEffect(() => {
+    if (!mutationState) {
+      return
+    }
+    setSearchText(
+      mutationState.searchPosition == null
+        ? ''
+        : String(mutationState.searchPosition),
+    )
+    setRangeText(String(mutationState.searchRange))
+  }, [mutationState?.searchPosition, mutationState?.searchRange, mutationState])
+
+  const submitSearch = () => {
+    const position = Number(searchText)
+    const range = Number(rangeText)
+    if (!Number.isFinite(position)) {
+      return
+    }
+    controller?.triggerSearch?.(
+      position,
+      Number.isFinite(range) ? range : DEFAULT_MUTATION_SEARCH_RANGE,
+    )
+  }
+
+  if (mutationState?.isLoading && mutations.length === 0) {
+    return (
+      <Box sx={{ py: 3, textAlign: 'center' }}>
+        <Typography color="text.secondary">Loading mutations...</Typography>
+      </Box>
+    )
+  }
+
+  return (
+    <>
+      {hasLiveState ? (
+        <Box className={classes.filterBox}>
+          <Box className={classes.filterRow}>
+            <input
+              className={classes.filterInput}
+              aria-label="Mutation position"
+              placeholder="Position"
+              value={searchText}
+              onChange={event => setSearchText(event.target.value)}
+              onKeyDown={event => {
+                if (event.key !== 'Enter') return
+                event.preventDefault()
+                submitSearch()
+              }}
+            />
+            <input
+              className={classes.filterInput}
+              aria-label="Mutation search range"
+              placeholder="Range"
+              value={rangeText}
+              onChange={event => {
+                setRangeText(event.target.value)
+                const range = Number(event.target.value)
+                if (Number.isFinite(range)) {
+                  controller?.setSearchRange?.(range)
+                }
+              }}
+              onKeyDown={event => {
+                if (event.key !== 'Enter') return
+                event.preventDefault()
+                submitSearch()
+              }}
+            />
+            <button
+              type="button"
+              className={classes.linkButton}
+              onClick={submitSearch}
+            >
+              Search
+            </button>
+            {mutationState?.isSearchMode ? (
+              <button
+                type="button"
+                className={classes.linkButton}
+                onClick={() => controller?.clearSearch?.()}
+              >
+                Clear
+              </button>
+            ) : null}
+          </Box>
+          {mutationState?.error ? (
+            <Typography color="error">
+              Error loading mutations: {mutationState.error}
+            </Typography>
+          ) : (
+            <Typography color="text.secondary">
+              {mutationState?.isSearchMode &&
+              mutationState.searchPosition != null
+                ? `Showing mutations around position ${mutationState.searchPosition}`
+                : 'Showing mutations in current view'}
+            </Typography>
+          )}
+        </Box>
+      ) : null}
+
+      {mutations.length === 0 ? (
+        <Typography color="text.secondary">
+          {hasLiveState
+            ? mutationState?.isSearchMode && mutationState.searchPosition != null
+              ? `No mutations found near position ${mutationState.searchPosition}`
+              : 'No mutations in current view.'
+            : 'No mutations loaded for this view.'}
+        </Typography>
+      ) : (
+        <>
+          <Typography
+            variant="overline"
+            component="h2"
+            className={classes.sectionHeader}
+          >
+            Mutations ({totalCount || mutations.length})
+          </Typography>
+          <Divider sx={{ mb: 1 }} />
+          {mutations.map((mutation, index) => {
+            const id =
+              mutation.id ??
+              mutation.mutation_id ??
+              mutation.site_id ??
+              mutation.position ??
+              index
+            const nodeLabel = getMutationNodeLabel(mutation)
+            const position = getMutationPosition(mutation)
+            const canNavigate =
+              position !== null && Boolean(controller?.navigateToMutation)
+            return (
+              <Box key={`mut-${formatScalar(id) ?? index}-${index}`} sx={{ mb: 1 }}>
+                <button
+                  type="button"
+                  className={classes.linkButton}
+                  style={{
+                    color: 'inherit',
+                    display: 'block',
+                    textAlign: 'left',
+                    width: '100%',
+                  }}
+                  aria-label={
+                    position === null
+                      ? `Go to mutation ${formatScalar(id) ?? index}`
+                      : `Go to mutation at position ${formatPosition(position)}`
+                  }
+                  disabled={!canNavigate}
+                  onClick={() => controller?.navigateToMutation?.(mutation)}
+                >
+                  <span style={{ fontWeight: 700, marginRight: 8 }}>
+                    Mut {formatScalar(id) ?? index}
+                  </span>
+                  <span>{formatMutationRow(mutation)}</span>
+                </button>
+                {nodeLabel ? (
+                  <Typography variant="caption" color="text.secondary">
+                    {nodeLabel}
+                  </Typography>
+                ) : null}
+              </Box>
+            )
+          })}
+          {mutationState?.isLoading ? (
+            <Typography color="text.secondary">Loading mutations...</Typography>
+          ) : null}
+          {mutationState?.hasMore ? (
+            <button
+              type="button"
+              className={classes.linkButton}
+              onClick={() => controller?.loadMore?.()}
+            >
+              Load more
+            </button>
+          ) : null}
+        </>
+      )}
+    </>
+  )
+}
+
 function FilterContent({
   filterState,
   controller,
@@ -1305,6 +1568,7 @@ const LoraxMetadataWidget = observer(function LoraxMetadataWidget({
   const parsed = parseSnapshot(model.snapshot)
   const selectedDetail = parseSelectedDetail(model.selectedDetail)
   const detailsState = parseDetailsState(model.detailsState)
+  const mutationState = parseMutationState(model.mutationState)
   const filterState = parseFilterState(model.filterState)
 
   useEffect(() => {
@@ -1364,32 +1628,11 @@ const LoraxMetadataWidget = observer(function LoraxMetadataWidget({
 
       <TabPanel value={tab} index={1}>
         <div className={classes.tabPanel}>
-          {mutations.length === 0 ? (
-            <Typography color="text.secondary">
-              No mutations in this load payload.
-            </Typography>
-          ) : (
-            <>
-              <Typography
-                variant="overline"
-                component="h2"
-                className={classes.sectionHeader}
-              >
-                Mutations ({mutations.length})
-              </Typography>
-              <Divider sx={{ mb: 1 }} />
-              {mutations.map((m, i) => {
-                const id = m.id != null ? String(m.id) : String(i)
-                return (
-                  <SimpleField
-                    key={`mut-${id}-${i}`}
-                    name={`Mut ${id}`}
-                    value={formatMutationRow(m)}
-                  />
-                )
-              })}
-            </>
-          )}
+          <MutationContent
+            mutationState={mutationState}
+            fallbackMutations={mutations}
+            controller={model.mutationController}
+          />
         </div>
       </TabPanel>
 
