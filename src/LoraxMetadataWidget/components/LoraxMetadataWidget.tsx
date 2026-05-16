@@ -16,7 +16,7 @@ import {
   metadataFeatureConfig,
   type MetadataFeature,
 } from '../metadataFeatureConfig'
-import type { IStateTreeNode } from '@jbrowse/mobx-state-tree'
+import type { IStateTreeNode } from '@jbrowse/mobx-state-tree' 
 
 /** Widget state; extends MST node with fields this component reads. */
 type LoraxMetadataWidgetModel = IStateTreeNode & {

@@ -25,7 +25,7 @@ jest.mock('tss-react/mui', () => ({
 }))
 
 jest.mock('@mui/material', () => {
-  const ReactMock = jest.requireActual<typeof ReactNamespace>('react')
+  const ReactMock = jest.requireActual<typeof ReactNamespace>('react') 
   const passthrough = (tag: 'div' | 'pre') => {
     return function MockComponent({ children }: MockProps) {
       return ReactMock.createElement(tag, null, children)
