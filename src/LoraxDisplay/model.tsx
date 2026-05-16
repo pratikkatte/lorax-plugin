@@ -163,6 +163,7 @@ export default function stateModelFactory(
       settingsDialogOpen: types.optional(types.boolean, false),
       metadataViewEnabled: types.optional(types.boolean, false),
       compareTopologiesEnabled: types.optional(types.boolean, false),
+      highlightDescendantsOnHover: types.optional(types.boolean, false),
       lockViewEnabled: types.optional(types.boolean, false),
       /** Serializable snapshot of last load_file result for the metadata drawer. */
       loadResultSnapshot: types.optional(types.frozen(), null),
@@ -186,6 +187,9 @@ export default function stateModelFactory(
       },
       setCompareTopologiesEnabled(value: boolean) {
         self.compareTopologiesEnabled = value
+      },
+      setHighlightDescendantsOnHover(value: boolean) {
+        self.highlightDescendantsOnHover = value
       },
       setLockViewEnabled(value: boolean) {
         self.lockViewEnabled = value
@@ -273,7 +277,16 @@ export default function stateModelFactory(
               }
             },
           },
-          { type: 'divider' },
+          {
+            type: 'checkbox',
+            label: 'Highlight descendants',
+            checked: self.highlightDescendantsOnHover,
+            onClick: () => {
+              self.setHighlightDescendantsOnHover(
+                !self.highlightDescendantsOnHover,
+              )
+            },
+          },
           {
             type: 'checkbox',
             label: 'Lock view',
@@ -282,6 +295,7 @@ export default function stateModelFactory(
               self.setLockViewEnabled(!self.lockViewEnabled)
             },
           },
+          { type: 'divider' },
           {
             label: 'Settings',
             icon: SettingsIcon,

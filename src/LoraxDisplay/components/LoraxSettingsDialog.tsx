@@ -79,8 +79,6 @@ export interface LoraxSettingsDialogProps {
   setShowCompareDeletion: (v: boolean) => void
   compareDeletionColor: Rgba
   setCompareDeletionColor: (v: Rgba) => void
-  highlightDescendantsOnHover: boolean
-  setHighlightDescendantsOnHover: (v: boolean) => void
   descendantsHighlightColor: Rgba
   setDescendantsHighlightColor: (v: Rgba) => void
 }
@@ -105,8 +103,6 @@ export default function LoraxSettingsDialog(props: LoraxSettingsDialogProps) {
     setShowCompareDeletion,
     compareDeletionColor,
     setCompareDeletionColor,
-    highlightDescendantsOnHover,
-    setHighlightDescendantsOnHover,
     descendantsHighlightColor,
     setDescendantsHighlightColor,
   } = props
@@ -195,15 +191,6 @@ export default function LoraxSettingsDialog(props: LoraxSettingsDialogProps) {
         <Typography variant="subtitle2" gutterBottom sx={{ mt: 2 }}>
           Edge hover
         </Typography>
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={highlightDescendantsOnHover}
-              onChange={e => setHighlightDescendantsOnHover(e.target.checked)}
-            />
-          }
-          label="Highlight descendants on edge hover"
-        />
         <ColorRow
           label="Highlight color"
           value={descendantsHighlightColor}

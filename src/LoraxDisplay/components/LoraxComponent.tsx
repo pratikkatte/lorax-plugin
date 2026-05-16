@@ -1216,11 +1216,9 @@ const LoraxComponent = observer(function LoraxComponent({
   >([255, 0, 0, 200])
   const [showCompareInsertion, setShowCompareInsertion] = useState(true)
   const [showCompareDeletion, setShowCompareDeletion] = useState(true)
-  const [highlightDescendantsOnHover, setHighlightDescendantsOnHover] =
-    useState(false)
   const [descendantsHighlightColor, setDescendantsHighlightColor] = useState<
     [number, number, number, number]
-  >([56, 189, 248, 255])
+  >([94, 177, 155, 255])
   const [edgeColor, setEdgeColor] = useState<[number, number, number, number]>([
     100, 100, 100, 255,
   ])
@@ -1697,7 +1695,7 @@ const LoraxComponent = observer(function LoraxComponent({
           showCompareInsertion={showCompareInsertion}
           showCompareDeletion={showCompareDeletion}
           lockViewEnabled={model.lockViewEnabled}
-          highlightDescendantsOnHover={highlightDescendantsOnHover}
+          highlightDescendantsOnHover={model.highlightDescendantsOnHover}
           descendantsHighlightColor={descendantsHighlightColor}
           treeIsLoading={treeIsLoading}
           onTreeLoadingChange={handleTreeLoadingChange}
@@ -1731,8 +1729,6 @@ const LoraxComponent = observer(function LoraxComponent({
         setShowCompareDeletion={setShowCompareDeletion}
         compareDeletionColor={compareDeletionColor}
         setCompareDeletionColor={setCompareDeletionColor}
-        highlightDescendantsOnHover={highlightDescendantsOnHover}
-        setHighlightDescendantsOnHover={setHighlightDescendantsOnHover}
         descendantsHighlightColor={descendantsHighlightColor}
         setDescendantsHighlightColor={setDescendantsHighlightColor}
       />

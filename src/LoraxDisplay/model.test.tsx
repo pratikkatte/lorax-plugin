@@ -62,27 +62,37 @@ describe('LoraxDisplay track menu', () => {
     return menuItems.find(item => item.label === label)
   }
 
-  it('renders Lock view unchecked above Settings and toggles without changing existing options', () => {
+  it('renders Highlight descendants above Lock view and toggles both without changing existing options', () => {
     const model = createModel()
 
     let menuItems: any[] = model.trackMenuItems()
     const labels = menuItems.map(item => item.label)
     const fileInfoIndex = labels.indexOf('File Info')
     const resetViewIndex = labels.indexOf('Reset view')
+    const metadataIndex = labels.indexOf('Metadata view')
+    const descendantsItem = findMenuItem(menuItems, 'Highlight descendants')
     const lockItem = findMenuItem(menuItems, 'Lock view')
     const settingsIndex = labels.indexOf('Settings')
+    const descendantsIndex = labels.indexOf('Highlight descendants')
     const lockIndex = labels.indexOf('Lock view')
 
     expect(resetViewIndex).toBe(fileInfoIndex + 1)
     expect(findMenuItem(menuItems, 'Reset view')).toMatchObject({
       label: 'Reset view',
     })
+    expect(descendantsItem).toMatchObject({
+      type: 'checkbox',
+      label: 'Highlight descendants',
+      checked: false,
+    })
     expect(lockItem).toMatchObject({
       type: 'checkbox',
       label: 'Lock view',
       checked: false,
     })
-    expect(lockIndex).toBe(settingsIndex - 1)
+    expect(descendantsIndex).toBe(metadataIndex + 1)
+    expect(lockIndex).toBe(descendantsIndex + 1)
+    expect(settingsIndex).toBeGreaterThan(lockIndex)
     expect(findMenuItem(menuItems, 'Compare topologies')).toMatchObject({
       type: 'checkbox',
       checked: false,
@@ -90,6 +100,14 @@ describe('LoraxDisplay track menu', () => {
     expect(findMenuItem(menuItems, 'Metadata view')).toMatchObject({
       type: 'checkbox',
       checked: false,
+    })
+
+    descendantsItem?.onClick?.()
+    menuItems = model.trackMenuItems()
+
+    expect(model.highlightDescendantsOnHover).toBe(true)
+    expect(findMenuItem(menuItems, 'Highlight descendants')).toMatchObject({
+      checked: true,
     })
 
     lockItem?.onClick?.()
