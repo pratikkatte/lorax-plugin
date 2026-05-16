@@ -415,6 +415,14 @@ function getSchemaMetadataGroups(
   }).filter(group => group.options.length > 0)
 }
 
+function getDefaultMetadataKey(labels: Record<string, string>) {
+  const keys = Object.keys(labels)
+  if (keys.length === 0) {
+    return null
+  }
+  return keys.includes('sample') ? 'sample' : keys[0]
+}
+
 function formatPosition(value: unknown) {
   const numeric = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(numeric)
@@ -840,17 +848,28 @@ function FilterContent({
     Object.keys(filterState.coloryby).length > 0
       ? filterState.coloryby
       : schemaLabels
+  const defaultMetadataKey = getDefaultMetadataKey(dropdownLabels)
+  const effectiveSelectedColorBy = selectedColorBy ?? defaultMetadataKey
   const dropdownGroups =
     filterState.metadataOptionGroups.length > 0
       ? filterState.metadataOptionGroups
       : getSchemaMetadataGroups(metadataSchema, dropdownLabels)
   const hasDropdownOptions = Object.keys(dropdownLabels).length > 0
+  const displayedDropdownGroups = dropdownLabels.sample
+    ? dropdownGroups
+        .map(group => ({
+          ...group,
+          options: group.options.filter(option => option.key !== 'sample'),
+        }))
+        .filter(group => group.options.length > 0)
+    : dropdownGroups
   const valueToColor = useMemo(
     () =>
-      selectedColorBy && filterState.metadataColors?.[selectedColorBy]
-        ? filterState.metadataColors[selectedColorBy]
+      effectiveSelectedColorBy &&
+      filterState.metadataColors?.[effectiveSelectedColorBy]
+        ? filterState.metadataColors[effectiveSelectedColorBy]
         : {},
-    [filterState.metadataColors, selectedColorBy],
+    [filterState.metadataColors, effectiveSelectedColorBy],
   )
   const enabledSet = useMemo(
     () => new Set(filterState.enabledValues),
@@ -876,15 +895,22 @@ function FilterContent({
     )
   }, [filterState.tsconfig?.filename, filterState.tsconfig?.project])
   const isCsvFile = Boolean(filterState.tsconfig?.tree_info)
-  const selectedLoadStatus = selectedColorBy
-    ? filterState.loadedMetadata[selectedColorBy]
+  const selectedLoadStatus = effectiveSelectedColorBy
+    ? filterState.loadedMetadata[effectiveSelectedColorBy]
     : null
   const isMetadataValueLoading = Boolean(
-    selectedColorBy &&
+    effectiveSelectedColorBy &&
       (selectedLoadStatus === 'loading' ||
         (filterState.metadataLoading &&
           Object.keys(valueToColor).length === 0)),
   )
+
+  useEffect(() => {
+    if (selectedColorBy || !defaultMetadataKey) {
+      return
+    }
+    controller?.setSelectedColorBy?.(defaultMetadataKey)
+  }, [controller, defaultMetadataKey, selectedColorBy])
 
   return (
     <Box>
@@ -916,7 +942,7 @@ function FilterContent({
           <select
             className={classes.filterInput}
             aria-label="Metadata key"
-            value={selectedColorBy ?? ''}
+            value={effectiveSelectedColorBy ?? ''}
             onChange={event => {
               if (!event.target.value) {
                 return
@@ -929,13 +955,13 @@ function FilterContent({
           >
             {!hasDropdownOptions ? (
               <option value="">No metadata available</option>
-            ) : dropdownGroups.length > 0 ? (
+            ) : displayedDropdownGroups.length > 0 ? (
               <>
                 <option value="">Select metadata</option>
                 {dropdownLabels.sample ? (
                   <option value="sample">{dropdownLabels.sample}</option>
                 ) : null}
-                {dropdownGroups.map(group => (
+                {displayedDropdownGroups.map(group => (
                   <optgroup key={group.source} label={group.label}>
                     {group.options.map(option => (
                       <option
@@ -981,7 +1007,9 @@ function FilterContent({
         {filterState.searchTags.length > 0 ? (
           <Box sx={{ mb: 1 }}>
             {filterState.searchTags.map((tag, index) => {
-              const tagColor = selectedColorBy ? valueToColor[tag] : null
+              const tagColor = effectiveSelectedColorBy
+                ? valueToColor[tag]
+                : null
               return (
                 <span
                   key={`${tag}-${index}`}
@@ -1072,12 +1100,13 @@ function FilterContent({
                       aria-label={`Color for ${value}`}
                       value={rgbaToHex(color)}
                       onChange={event => {
-                        if (!selectedColorBy) return
+                        if (!effectiveSelectedColorBy) return
                         const rgb = hexToRgb(event.target.value)
-                        controller?.setMetadataColor?.(selectedColorBy, value, [
-                          ...rgb,
-                          255,
-                        ])
+                        controller?.setMetadataColor?.(
+                          effectiveSelectedColorBy,
+                          value,
+                          [...rgb, 255],
+                        )
                       }}
                     />
                     <button
@@ -1129,11 +1158,11 @@ function FilterContent({
                 </Box>
               ) : null}
             </>
-          ) : selectedColorBy && isMetadataValueLoading ? (
+          ) : effectiveSelectedColorBy && isMetadataValueLoading ? (
             <Typography sx={{ p: 1 }} color="text.secondary">
               Loading metadata values...
             </Typography>
-          ) : selectedColorBy ? (
+          ) : effectiveSelectedColorBy ? (
             <Typography sx={{ p: 1 }} color="text.secondary">
               No values found
             </Typography>

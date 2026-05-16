@@ -1,5 +1,5 @@
 import React from 'react'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type * as ReactNamespace from 'react'
 
 interface MockProps {
@@ -313,7 +313,7 @@ describe('LoraxMetadataWidget Filter tab', () => {
     expect(controller.setSelectedColorBy).toHaveBeenCalledWith('region')
   })
 
-  it('falls back to snapshot metadata_schema keys before values are loaded', () => {
+  it('falls back to snapshot metadata_schema keys before values are loaded', async () => {
     const controller = {
       setSelectedColorBy: jest.fn(),
       setSearchTerm: jest.fn(),
@@ -345,10 +345,53 @@ describe('LoraxMetadataWidget Filter tab', () => {
     })
 
     const select = screen.getByLabelText('Metadata key')
-    expect(screen.getByText('Select a metadata key')).toBeTruthy()
+    await waitFor(() => {
+      expect(controller.setSelectedColorBy).toHaveBeenCalledWith('sample')
+    })
+    expect((select as HTMLSelectElement).value).toBe('sample')
+    expect(screen.getByText('No values found')).toBeTruthy()
     expect(select.querySelector('optgroup[label="Individuals"]')).toBeTruthy()
     fireEvent.change(select, { target: { value: 'name' } })
     expect(controller.setSelectedColorBy).toHaveBeenCalledWith('name')
+  })
+
+  it('syncs the sample metadata key by default when only schema options are available', async () => {
+    const controller = {
+      setSelectedColorBy: jest.fn(),
+      setSearchTerm: jest.fn(),
+      setSearchTags: jest.fn(),
+    }
+    renderWidget({
+      activeTab: 2,
+      snapshot: {
+        config: {
+          metadata_schema: {
+            metadata_keys: ['region', 'sample', 'name'],
+            metadata_keys_by_source: {
+              individual: ['sample', 'name'],
+              node: [],
+              population: ['region'],
+            },
+          },
+        },
+      },
+      filterState: {
+        ...filterState,
+        selectedColorBy: null,
+        coloryby: {},
+        metadataOptionGroups: [],
+        metadataColors: {},
+        enabledValues: [],
+      },
+      filterController: controller,
+    })
+
+    await waitFor(() => {
+      expect(controller.setSelectedColorBy).toHaveBeenCalledWith('sample')
+    })
+    expect((screen.getByLabelText('Metadata key') as HTMLSelectElement).value).toBe(
+      'sample',
+    )
   })
 
   it('shows a loading state while selected metadata values are loading', () => {
