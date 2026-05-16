@@ -27,6 +27,7 @@ import {
 } from '../model'
 import { useStableIntervalCoords } from '../useStableIntervalCoords'
 import { computeStrictVisibleRegion } from '../viewport'
+import { getLoraxLoadingStatus } from '../loadingStatus'
 import {
   numberArraysEqual,
   useStartupStableIntervalCoords,
@@ -209,6 +210,78 @@ type DeckRef = {
 const FILTER_TAB_INDEX = 2
 const PRESET_FEATURE_PARAM = 'presetfeature'
 const HOVER_TOOLTIP_OFFSET_PX = 12
+const LOADING_OVERLAY_STYLE = `
+@keyframes lorax-jbrowse-loading-dots {
+  0% { content: ""; }
+  25% { content: "."; }
+  50% { content: ".."; }
+  75% { content: "..."; }
+}
+.lorax-jbrowse-loading-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 20px;
+}
+.lorax-jbrowse-loading-overlay {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(255, 255, 255, 0.15);
+  background-image: repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(0, 0, 0, 0.05) 8px, rgba(0, 0, 0, 0.05) 16px);
+  pointer-events: none;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  opacity: 0;
+}
+.lorax-jbrowse-loading-overlay-visible {
+  opacity: 1;
+}
+.lorax-jbrowse-loading-dots {
+  font-size: 0.8rem;
+  font-weight: 300;
+}
+.lorax-jbrowse-loading-dots::after {
+  display: inline-block;
+  content: "";
+  width: 1em;
+  text-align: left;
+  animation: lorax-jbrowse-loading-dots 1.2s infinite ease-in-out;
+}
+`
+
+function JBrowseLoadingOverlay({
+  statusMessage,
+  children,
+  height,
+}: {
+  statusMessage?: string
+  children?: React.ReactNode
+  height?: number
+}) {
+  const isLoading = Boolean(statusMessage)
+  return (
+    <div
+      className="lorax-jbrowse-loading-root"
+      style={height ? { minHeight: height } : undefined}
+    >
+      <style>{LOADING_OVERLAY_STYLE}</style>
+      {children}
+      <span
+        className={[
+          'lorax-jbrowse-loading-overlay',
+          isLoading ? 'lorax-jbrowse-loading-overlay-visible' : '',
+        ].join(' ')}
+        data-testid={isLoading ? 'loading-overlay' : undefined}
+      >
+        <span className="lorax-jbrowse-loading-dots">
+          {statusMessage || 'Loading'}
+        </span>
+      </span>
+    </div>
+  )
+}
 
 /** Viewport coords for a tooltip portaled to `document.body`. */
 function getViewportCoordsForTooltip(
@@ -326,8 +399,10 @@ function LoraxDeckContainer({
   compareDeletionColor,
   showCompareInsertion,
   showCompareDeletion,
+  lockViewEnabled,
   highlightDescendantsOnHover,
   descendantsHighlightColor,
+  treeIsLoading,
   onTipHover,
   onEdgeHover,
   onTreeLoadingChange,
@@ -354,8 +429,10 @@ function LoraxDeckContainer({
   compareDeletionColor: [number, number, number, number]
   showCompareInsertion: boolean
   showCompareDeletion: boolean
+  lockViewEnabled: boolean
   highlightDescendantsOnHover: boolean
   descendantsHighlightColor: [number, number, number, number]
+  treeIsLoading: boolean
   onTipHover: (tip: unknown, info: DeckPickInfo, event: DeckPickEvent) => void
   onEdgeHover: (edge: unknown, info: DeckPickInfo, event: DeckPickEvent) => void
   onTreeLoadingChange: (loading: boolean) => void
@@ -381,16 +458,12 @@ function LoraxDeckContainer({
       config.sid ?? null,
     )
   }, [loadResult, handleConfigUpdate])
-  const statusText =
-    statusMessage && typeof statusMessage === 'object'
-      ? String(
-          (statusMessage as { message?: string }).message ??
-            (statusMessage as { status?: string }).status ??
-            '',
-        )
-      : ''
-
-  const showConnectingOverlay = !isConnected
+  const loadingStatus = getLoraxLoadingStatus({
+    isConnected,
+    hasLoadConfig: Boolean(loadResult?.config),
+    treeIsLoading,
+    backendStatusMessage: statusMessage,
+  })
 
   const requestSelectionDetails = useCallback(
     async (
@@ -467,78 +540,55 @@ function LoraxDeckContainer({
   )
 
   return (
-    <div
-      style={{
-        boxSizing: 'border-box',
-        height,
-        minWidth: 0,
-        overflow: 'hidden',
-        width: placement.widthPx > 0 ? placement.widthPx : width,
-        left: placement.leftPx,
-        position: 'absolute',
-        top: 0,
-      }}
+    <JBrowseLoadingOverlay
+      statusMessage={loadingStatus}
+      height={height}
     >
-      <LoraxDeckGL
-        ref={deckRef}
-        viewConfig={viewConfig}
-        showPolygons
-        treeLayersEnabled={true}
-        externalGenomicCoords={intervalCoords}
-        externalGenomicCoordsRequired
-        externalGenomicCoordsSync
-        colorEdgesByTree={colorByTree}
-        treeEdgeColors={treeColors}
-        hoveredTreeIndex={hoveredTreeIndex}
-        highlightedMutationNode={highlightedMutationNode}
-        highlightedMutationTreeIndex={highlightedMutationTreeIndex}
-        onTreeLoadingChange={onTreeLoadingChange}
-        onVisibleTreesChange={onVisibleTreesChange}
-        polygonOptions={{ treeColors, fillColor: polygonFillColor }}
-        timeScale={timeScale}
-        edgeColor={edgeColor}
-        defaultTipColor={defaultTipColor}
-        compareInsertionColor={compareInsertionColor}
-        compareDeletionColor={compareDeletionColor}
-        showCompareInsertion={showCompareInsertion}
-        showCompareDeletion={showCompareDeletion}
-        highlightDescendantsOnHover={highlightDescendantsOnHover}
-        descendantsHighlightColor={descendantsHighlightColor}
-        onTipHover={onTipHover}
-        onTipClick={onTipClick}
-        onEdgeHover={onEdgeHover}
-        onEdgeClick={onEdgeClick}
-      />
-      {showConnectingOverlay ? (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            pointerEvents: 'none',
-            zIndex: 10,
-          }}
-        >
-          <div
-            style={{
-              padding: '6px 12px',
-              borderRadius: 8,
-              background: 'rgba(17, 24, 39, 0.78)',
-              color: '#fff',
-              fontSize: 12,
-              fontWeight: 600,
-              textTransform: 'lowercase',
-            }}
-          >
-            {statusText
-              ? `connecting backend - ${statusText}`
-              : 'connecting backend'}
-          </div>
-        </div>
-      ) : null}
-    </div>
+      <div
+        style={{
+          boxSizing: 'border-box',
+          height,
+          minWidth: 0,
+          overflow: 'hidden',
+          width: placement.widthPx > 0 ? placement.widthPx : width,
+          left: placement.leftPx,
+          position: 'absolute',
+          top: 0,
+        }}
+      >
+        <LoraxDeckGL
+          ref={deckRef}
+          viewConfig={viewConfig}
+          showPolygons
+          treeLayersEnabled={true}
+          externalGenomicCoords={intervalCoords}
+          externalGenomicCoordsRequired
+          externalGenomicCoordsSync
+          colorEdgesByTree={colorByTree}
+          treeEdgeColors={treeColors}
+          hoveredTreeIndex={hoveredTreeIndex}
+          highlightedMutationNode={highlightedMutationNode}
+          highlightedMutationTreeIndex={highlightedMutationTreeIndex}
+          onTreeLoadingChange={onTreeLoadingChange}
+          onVisibleTreesChange={onVisibleTreesChange}
+          polygonOptions={{ treeColors, fillColor: polygonFillColor }}
+          timeScale={timeScale}
+          edgeColor={edgeColor}
+          defaultTipColor={defaultTipColor}
+          compareInsertionColor={compareInsertionColor}
+          compareDeletionColor={compareDeletionColor}
+          showCompareInsertion={showCompareInsertion}
+          showCompareDeletion={showCompareDeletion}
+          lockModelMatrix={lockViewEnabled}
+          highlightDescendantsOnHover={highlightDescendantsOnHover}
+          descendantsHighlightColor={descendantsHighlightColor}
+          onTipHover={onTipHover}
+          onTipClick={onTipClick}
+          onEdgeHover={onEdgeHover}
+          onEdgeClick={onEdgeClick}
+        />
+      </div>
+    </JBrowseLoadingOverlay>
   )
 }
 
@@ -1499,8 +1549,10 @@ const LoraxComponent = observer(function LoraxComponent({
           compareDeletionColor={compareDeletionColor}
           showCompareInsertion={showCompareInsertion}
           showCompareDeletion={showCompareDeletion}
+          lockViewEnabled={model.lockViewEnabled}
           highlightDescendantsOnHover={highlightDescendantsOnHover}
           descendantsHighlightColor={descendantsHighlightColor}
+          treeIsLoading={treeIsLoading}
           onTreeLoadingChange={handleTreeLoadingChange}
           onVisibleTreesChange={handleVisibleTreesChange}
           onTipHover={onTipHover}

@@ -162,6 +162,7 @@ export default function stateModelFactory(
       settingsDialogOpen: types.optional(types.boolean, false),
       metadataViewEnabled: types.optional(types.boolean, false),
       compareTopologiesEnabled: types.optional(types.boolean, false),
+      lockViewEnabled: types.optional(types.boolean, false),
       /** Serializable snapshot of last load_file result for the metadata drawer. */
       loadResultSnapshot: types.optional(types.frozen(), null),
     }),
@@ -180,6 +181,9 @@ export default function stateModelFactory(
       },
       setCompareTopologiesEnabled(value: boolean) {
         self.compareTopologiesEnabled = value
+      },
+      setLockViewEnabled(value: boolean) {
+        self.lockViewEnabled = value
       },
       setFileInfoDialogOpen(value: boolean) {
         self.fileInfoDialogOpen = value
@@ -259,6 +263,14 @@ export default function stateModelFactory(
             },
           },
           { type: 'divider' },
+          {
+            type: 'checkbox',
+            label: 'Lock view',
+            checked: self.lockViewEnabled,
+            onClick: () => {
+              self.setLockViewEnabled(!self.lockViewEnabled)
+            },
+          },
           {
             label: 'Settings',
             icon: SettingsIcon,

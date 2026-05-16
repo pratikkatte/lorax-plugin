@@ -1,7 +1,10 @@
-jest.mock('@jbrowse/core/configuration', () => ({
-  ConfigurationReference: jest.fn(),
-  readConfObject: jest.fn(),
-}), { virtual: true })
+jest.mock('@jbrowse/core/configuration', () => {
+  const { types } = require('@jbrowse/mobx-state-tree')
+  return {
+    ConfigurationReference: jest.fn(() => types.frozen()),
+    readConfObject: jest.fn(),
+  }
+}, { virtual: true })
 
 jest.mock('@jbrowse/core/ui', () => ({
   createJBrowseTheme: jest.fn(() => ({
@@ -13,9 +16,12 @@ jest.mock('@jbrowse/core/ui', () => ({
   })),
 }), { virtual: true })
 
-jest.mock('@jbrowse/core/pluggableElementTypes/models', () => ({
-  BaseDisplay: {},
-}), { virtual: true })
+jest.mock('@jbrowse/core/pluggableElementTypes/models', () => {
+  const { types } = require('@jbrowse/mobx-state-tree')
+  return {
+    BaseDisplay: types.model({}),
+  }
+}, { virtual: true })
 
 jest.mock('@jbrowse/core/util', () => ({
   getContainingTrack: jest.fn(),
@@ -23,9 +29,12 @@ jest.mock('@jbrowse/core/util', () => ({
   getSession: jest.fn(),
 }), { virtual: true })
 
-jest.mock('@jbrowse/plugin-linear-genome-view', () => ({
-  TrackHeightMixin: jest.fn(() => ({})),
-}), { virtual: true })
+jest.mock('@jbrowse/plugin-linear-genome-view', () => {
+  const { types } = require('@jbrowse/mobx-state-tree')
+  return {
+    TrackHeightMixin: jest.fn(() => types.model({})),
+  }
+}, { virtual: true })
 
 jest.mock('@mui/icons-material/Settings', () => ({
   __esModule: true,
@@ -35,11 +44,57 @@ jest.mock('@mui/icons-material/Settings', () => ({
 }))
 
 import { TextDecoder, TextEncoder } from 'util'
-import { renderLoraxDisplaySvg } from './model'
+import stateModelFactory, { renderLoraxDisplaySvg } from './model'
 
 Object.assign(globalThis, { TextDecoder, TextEncoder })
 
 const { renderToStaticMarkup } = require('react-dom/server') as typeof import('react-dom/server')
+
+describe('LoraxDisplay track menu', () => {
+  function createModel() {
+    return stateModelFactory({} as any).create({
+      type: 'LoraxDisplay',
+      configuration: {},
+    }) as any
+  }
+
+  function findMenuItem(menuItems: any[], label: string) {
+    return menuItems.find(item => item.label === label)
+  }
+
+  it('renders Lock view unchecked above Settings and toggles without changing existing options', () => {
+    const model = createModel()
+
+    let menuItems: any[] = model.trackMenuItems()
+    const labels = menuItems.map(item => item.label)
+    const lockItem = findMenuItem(menuItems, 'Lock view')
+    const settingsIndex = labels.indexOf('Settings')
+    const lockIndex = labels.indexOf('Lock view')
+
+    expect(lockItem).toMatchObject({
+      type: 'checkbox',
+      label: 'Lock view',
+      checked: false,
+    })
+    expect(lockIndex).toBe(settingsIndex - 1)
+    expect(findMenuItem(menuItems, 'Compare topologies')).toMatchObject({
+      type: 'checkbox',
+      checked: false,
+    })
+    expect(findMenuItem(menuItems, 'Metadata view')).toMatchObject({
+      type: 'checkbox',
+      checked: false,
+    })
+
+    lockItem?.onClick?.()
+    menuItems = model.trackMenuItems()
+
+    expect(model.lockViewEnabled).toBe(true)
+    expect(findMenuItem(menuItems, 'Lock view')).toMatchObject({
+      checked: true,
+    })
+  })
+})
 
 describe('renderLoraxDisplaySvg', () => {
   const opts = {}
